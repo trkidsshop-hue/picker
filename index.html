@@ -167,13 +167,85 @@
         </div>
     </div>
 
-    <!-- MOBILE PICKER (เหมือนเดิม) -->
-    <div id="picker-layout" class="hidden min-h-screen bg-slate-900 text-white flex flex-col p-4">
-        <header class="flex justify-between items-center mb-6 py-2 border-b border-slate-800"><span class="font-bold text-sm">USER: <span id="p-name" class="text-blue-400"></span></span><button onclick="logout()" class="text-[10px] bg-red-600/20 text-red-400 px-3 py-1 rounded-full">Logout</button></header>
-        <div id="picker-content" class="flex-1 flex flex-col items-center justify-center space-y-6">
-            <div id="p-job-card" class="bg-white text-slate-900 w-full rounded-[2.5rem] overflow-hidden shadow-2xl hidden"><img id="p-img" src="" class="w-full aspect-square object-cover bg-gray-100 border-b"><div class="p-8"><div class="text-red-600 font-black text-5xl mb-2 tracking-tighter" id="p-loc">---</div><h2 class="text-xl font-bold leading-tight mb-4" id="p-prod">---</h2><div class="flex justify-between items-center border-t border-dashed pt-4"><span class="text-gray-400 text-sm uppercase font-bold tracking-widest">จำนวนเบิก: <b class="text-3xl text-slate-900 ml-2" id="p-qty">0</b></span><button onclick="pickerAlert()" class="bg-yellow-500 text-white px-4 py-2 rounded-xl font-bold text-[10px]">⚠️ แจ้งปัญหา</button></div></div></div>
-            <button id="p-btn-next" onclick="pickerFinishItem()" class="w-full bg-green-500 py-8 rounded-[2rem] text-3xl font-black shadow-lg hidden">หยิบเสร็จแล้ว (NEXT)</button>
-            <div id="p-no-job" class="text-center text-slate-500 italic py-20">ไม่มีงานที่ได้รับมอบหมายในขณะนี้</div>
+    <!-- 3. MOBILE PICKER LAYOUT (V.3.3 - ปรับปรุงใหม่หน้าเดียวไม่เลื่อน) -->
+    <div id="picker-layout" class="hidden h-screen bg-slate-900 text-white flex flex-col overflow-hidden">
+        <!-- ส่วนหัว: แสดงชื่อ, เวลา, และลำดับงาน -->
+        <!-- Header: ปรับปรุงใหม่ V.3.4 -->
+        <header class="p-3 border-b border-slate-800 flex justify-between items-center bg-slate-900/90 sticky top-0 z-20">
+            <!-- ซ้าย: พนักงาน -->
+            <div class="flex flex-col">
+                <span class="text-[10px] text-gray-500 uppercase font-black">พนักงาน</span>
+                <span id="p-name" class="text-sm font-bold text-blue-400 leading-none">---</span>
+            </div>
+            
+            <!-- กลาง: เวลา (HH:MM นาที) -->
+            <div class="flex flex-col items-center">
+                <span class="text-[10px] text-gray-500 uppercase font-black">เวลาที่ใช้</span>
+                <div class="flex items-baseline gap-1">
+                    <span id="p-timer" class="text-xl font-mono font-black text-yellow-400">00:00</span>
+                    <span class="text-[10px] text-yellow-400 font-bold">ชั่วโมง:นาที</span>
+                </div>
+            </div>
+
+            <!-- ขวา: ลำดับ และ ปุ่ม Logout -->
+            <div class="flex flex-col items-end gap-1">
+                <button onclick="logout()" class="bg-red-600 text-white text-[10px] px-3 py-1.5 rounded-lg font-black shadow-lg active:scale-95 transition-all">
+                    LOGOUT
+                </button>
+                <span class="text-[10px] font-bold text-gray-400">
+                    <span id="p-current-idx" class="text-green-400">0</span> / <span id="p-total-items">0</span>
+                </span>
+            </div>
+        </header>
+
+        <!-- ส่วนเนื้อหา: รูปและปุ่มแจ้งเตือน -->
+        <div id="picker-content" class="flex-1 flex flex-col p-4 justify-between overflow-hidden">
+            <div id="p-job-card" class="bg-white text-slate-900 w-full rounded-[2.5rem] overflow-hidden shadow-2xl flex flex-col hidden" style="max-height: 70vh;">
+                <!-- รูปภาพสินค้า (ปรับให้พอดีจอ) -->
+                <div class="relative flex-1 bg-gray-100 overflow-hidden">
+                    <img id="p-img" src="" class="w-full h-full object-contain">
+                    <div class="absolute top-4 left-4 bg-red-600 text-white px-5 py-2 rounded-2xl font-black text-4xl shadow-lg border-2 border-white">
+                        <span id="p-loc">---</span>
+                    </div>
+                </div>
+                
+                <div class="p-6">
+                    <h2 class="text-xl font-bold leading-tight mb-4 text-slate-800 line-clamp-2" id="p-prod">---</h2>
+                    <div class="flex items-center justify-between bg-slate-50 p-4 rounded-3xl border border-slate-100">
+                        <div class="flex flex-col">
+                            <span class="text-xs text-gray-400 font-bold uppercase">จำนวนเบิก</span>
+                            <span class="text-5xl font-black text-slate-900" id="p-qty">0</span>
+                        </div>
+                        <!-- ปุ่มแจ้งเตือนขนาดใหญ่ -->
+                        <button onclick="openAlertModal()" class="bg-yellow-500 text-white px-8 py-5 rounded-2xl font-black text-xl shadow-lg active:scale-95 transition-transform flex items-center gap-2">
+                            <i class="fas fa-exclamation-triangle text-2xl"></i> แจ้งปัญหา
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ปุ่มใหญ่สำหรับกดไปรายการถัดไป -->
+            <button id="p-btn-next" onclick="pickerFinishItem()" class="w-full bg-green-500 py-8 rounded-[2.5rem] text-4xl font-black shadow-lg shadow-green-900/40 hidden active:scale-95 transition-all border-b-8 border-green-700 mt-2">
+                หยิบเสร็จแล้ว
+            </button>
+
+            <div id="p-no-job" class="text-center text-slate-500 italic py-20">
+                <i class="fas fa-box-open text-6xl mb-4 block opacity-20"></i>
+                ไม่มีงานที่ได้รับมอบหมาย
+            </div>
+        </div>
+
+        <!-- หน้าต่างเลือกหัวข้อแจ้งเตือน (แทน prompt เดิม) -->
+        <div id="alert-modal" class="hidden fixed inset-0 z-[100] bg-slate-900/95 flex items-center justify-center p-6 transition-all">
+            <div class="bg-white w-full max-w-sm rounded-[3rem] overflow-hidden text-slate-900 shadow-2xl scale-in">
+                <div class="p-8 bg-slate-50 border-b flex justify-between items-center">
+                    <h3 class="font-black text-2xl">เลือกปัญหาที่พบ</h3>
+                    <button onclick="closeAlertModal()" class="text-gray-300 hover:text-red-500 text-3xl transition-colors"><i class="fas fa-times-circle"></i></button>
+                </div>
+                <div id="topic-options" class="p-6 grid grid-cols-1 gap-3 overflow-y-auto" style="max-height: 60vh;">
+                    <!-- รายการหัวข้อจะถูกโหลดใส่ที่นี่ -->
+                </div>
+            </div>
         </div>
     </div>
 
@@ -350,10 +422,14 @@
             try { adminStream = await navigator.mediaDevices.getUserMedia({ video: true }); document.getElementById('webcam').srcObject = adminStream; } 
             catch(e) { console.warn("Cam init error"); }
         }
-        // --- MOBILE PICKER LOGIC (Fixed V.3.3) ---
+        // --- NEW PICKER LOGIC V.3.3 ---
+        let pickerTimerInterval;
+
         async function loadPickerTask() {
-            // ดึงงานล่าสุดที่ได้รับมอบหมาย (ลบ .single() ออกเพื่อป้องกันหน้าจอขาวเมื่อไม่มีงาน)
-            const { data, error } = await sb.from('orders')
+            if (pickerTimerInterval) clearInterval(pickerTimerInterval);
+
+            // 1. ดึงงานที่ได้รับมอบหมายรายการแรก
+            const { data: job } = await sb.from('orders')
                 .select('*')
                 .eq('assigned_to', currentUser.id)
                 .eq('status', 'pending')
@@ -364,32 +440,61 @@
             const nextBtn = document.getElementById('p-btn-next');
             const noJobLabel = document.getElementById('p-no-job');
 
-            if (data && data.length > 0) {
-                const job = data[0];
-                currentUser.currentOrder = job;
+            if (job && job.length > 0) {
+                const currentJob = job[0];
+                currentUser.currentOrder = currentJob;
 
-                // แสดง Card และปุ่ม
+                // 2. คำนวณลำดับ (หาว่าใบงานนี้มีกี่ชิ้น และเราทำไปกี่ชิ้นแล้ว)
+                const { count: totalCount } = await sb.from('orders')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('order_id', currentJob.order_id);
+
+                const { count: doneCount } = await sb.from('orders')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('order_id', currentJob.order_id)
+                    .neq('status', 'pending');
+
+                // 3. แสดงผลข้อมูล
                 jobCard.classList.remove('hidden');
                 nextBtn.classList.remove('hidden');
                 noJobLabel.classList.add('hidden');
 
-                // อัปเดตข้อมูล
-                document.getElementById('p-loc').innerText = job.location;
-                document.getElementById('p-prod').innerText = job.product_name;
-                document.getElementById('p-qty').innerText = job.qty;
+                document.getElementById('p-loc').innerText = currentJob.location;
+                document.getElementById('p-prod').innerText = currentJob.product_name;
+                document.getElementById('p-qty').innerText = currentJob.qty;
+                document.getElementById('p-current-idx').innerText = (doneCount || 0) + 1;
+                document.getElementById('p-total-items').innerText = totalCount || 0;
                 
-                // แสดงรูปภาพ และจัดการกรณีหารูปไม่เจอ (NO IMAGE)
+                // จัดการรูปภาพ
                 const pImg = document.getElementById('p-img');
-                // แก้ไขจาก .js.jpg เป็น .jpg
-                pImg.src = `${PROJECT_A_IMAGE_URL}${job.product_code}.jpg`;
-                pImg.onerror = () => { pImg.src = 'https://placehold.co/400x400?text=NO+IMAGE'; };
+                pImg.src = `${PROJECT_A_IMAGE_URL}${currentJob.product_code}.jpg`;
+                pImg.onerror = () => { pImg.src = 'https://placehold.co/500x500?text=NO+IMAGE'; };
+
+                // 4. เริ่มตัวนับเวลา (นับจากเวลาที่งานถูกอัปโหลด/มอบหมาย)
+                startPickerTimer(currentJob.created_at);
             } else {
-                // ซ่อน Card เมื่อไม่มีงานค้าง
                 jobCard.classList.add('hidden');
                 nextBtn.classList.add('hidden');
                 noJobLabel.classList.remove('hidden');
-                currentUser.currentOrder = null;
+                document.getElementById('p-timer').innerText = "00:00";
             }
+        }
+
+        function startPickerTimer(startTimeStr) {
+            const start = new Date(startTimeStr).getTime();
+            if (pickerTimerInterval) clearInterval(pickerTimerInterval); // เคลียร์ของเก่าก่อนเริ่มใหม่
+
+            pickerTimerInterval = setInterval(() => {
+                const now = new Date().getTime();
+                const diff = Math.floor((now - start) / 1000); // ระยะเวลาเป็นวินาที
+                
+                const hrs = Math.floor(diff / 3600);
+                const mins = Math.floor((diff % 3600) / 60);
+                
+                // แสดงผลรูปแบบ HH:MM (วินาทียังนับอยู่เบื้องหลังแต่ไม่โชว์ เพื่อความสะอาดของหน้าจอ)
+                document.getElementById('p-timer').innerText = 
+                    `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+            }, 1000);
         }
 
         async function pickerFinishItem() {
@@ -397,27 +502,44 @@
             const { error } = await sb.from('orders')
                 .update({ status: 'picked', start_time: new Date() })
                 .eq('id', currentUser.currentOrder.id);
-            if (!error) { loadPickerTask(); }
+            if (!error) loadPickerTask();
         }
 
-        async function pickerAlert() {
-            if (!currentUser.currentOrder) return alert("ไม่พบข้อมูลออเดอร์");
+        // --- ระบบแจ้งเตือนแบบเลือกรายการ ---
+        function openAlertModal() {
+            document.getElementById('alert-modal').classList.remove('hidden');
+            loadAlertTopics();
+        }
+
+        function closeAlertModal() {
+            document.getElementById('alert-modal').classList.add('hidden');
+        }
+
+        async function loadAlertTopics() {
             const { data: topics } = await sb.from('notification_topics').select('topic_name');
-            if(!topics || topics.length === 0) return alert("ยังไม่ได้ตั้งค่าหัวข้อแจ้งเตือน");
-            let message = "กรุณาเลือกหมายเลขปัญหา:\n";
-            topics.forEach((t, i) => { message += `${i + 1}. ${t.topic_name}\n`; });
-            const choice = prompt(message);
-            if (choice) {
-                const index = parseInt(choice) - 1;
-                const selectedTopic = topics[index] ? topics[index].topic_name : null;
-                if (selectedTopic) {
-                    await sb.from('notifications').insert([{ 
-                        type: selectedTopic, 
-                        order_id: currentUser.currentOrder.order_id, 
-                        picker_id: currentUser.id 
-                    }]);
-                    alert("แจ้งปัญหาแล้ว");
-                }
+            const container = document.getElementById('topic-options');
+            if(!topics || topics.length === 0) {
+                container.innerHTML = `<p class="text-center text-gray-400 py-4 font-bold">ไม่มีหัวข้อแจ้งเตือนในระบบ</p>`;
+                return;
+            }
+            container.innerHTML = topics.map(t => `
+                <button onclick="submitPickerAlert('${t.topic_name}')" class="w-full text-left p-6 bg-slate-50 hover:bg-blue-50 active:bg-blue-100 rounded-[2rem] border border-slate-100 font-black text-xl text-slate-700 transition-all flex justify-between items-center group">
+                    <span>${t.topic_name}</span>
+                    <i class="fas fa-chevron-right text-slate-300 group-hover:text-blue-500"></i>
+                </button>
+            `).join('');
+        }
+
+        async function submitPickerAlert(topicName) {
+            if (!currentUser.currentOrder) return;
+            const { error } = await sb.from('notifications').insert([{ 
+                type: topicName, 
+                order_id: currentUser.currentOrder.order_id, 
+                picker_id: currentUser.id 
+            }]);
+            if(!error) {
+                alert("ส่งการแจ้งเตือนไปยังแอดมินแล้ว");
+                closeAlertModal();
             }
         }
         function subscribeRealtime() {
@@ -446,7 +568,10 @@
             if (count > 0) { badge.innerText = count; badge.classList.remove('hidden'); } else { badge.classList.add('hidden'); }
         }
 
-        function logout() { location.reload(); }
+        function logout() { 
+            if(pickerTimerInterval) clearInterval(pickerTimerInterval);
+            location.reload(); 
+        }
         async function deleteUser(id) { await sb.from('users').delete().eq('id', id); loadSettings(); }
         async function deleteTopic(id) { await sb.from('notification_topics').delete().eq('id', id); loadSettings(); }
     </script>
