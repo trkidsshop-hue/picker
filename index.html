@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WMS Smart System V.4.5</title>
+    <title>WMS Smart System V.4.7</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -39,6 +39,7 @@
         
         let currentInspectItems = [];
         let currentInspectTab = 'all'; 
+        let kpiDataForExport = []; // เพิ่มตัวแปรนี้สำหรับเก็บข้อมูล KPI
 
         const statusLabels = {
             'pending': 'กำลังจัด',
@@ -68,7 +69,10 @@
             <div class="p-6 text-xl font-black text-white border-b border-slate-700 tracking-tighter">WMS SYSTEM</div>
             <nav class="flex-1 mt-4 text-sm font-medium">
                 <div onclick="switchMenu('menu-upload')" class="menu-link flex items-center p-4" id="link-upload"><i class="fas fa-file-import w-8"></i> <span>จัดสินค้า</span></div>
-                <div onclick="switchMenu('menu-review')" class="menu-link flex items-center p-4" id="link-review"><i class="fas fa-tasks w-8"></i> <span>ตรวจสินค้า</span></div>
+                <div onclick="switchMenu('menu-review')" class="menu-link flex items-center p-4 relative" id="link-review">
+                    <i class="fas fa-tasks w-8"></i> <span>ตรวจสินค้า</span>
+                    <span id="review-badge" class="absolute right-4 bg-red-600 text-white text-[10px] px-1.5 py-0.5 rounded-full hidden font-bold">0</span>
+                </div>
                 <div onclick="switchMenu('menu-kpi')" class="menu-link flex items-center p-4" id="link-kpi"><i class="fas fa-chart-pie w-8"></i> <span>KPI</span></div>
                 <div onclick="switchMenu('menu-notif')" class="menu-link flex items-center p-4 relative" id="link-notif"><i class="fas fa-bell w-8"></i> <span>แจ้งเตือน</span><span id="notif-badge" class="absolute right-4 bg-red-600 text-white text-[10px] px-1.5 py-0.5 rounded-full hidden font-bold">0</span></div>
                 <div onclick="switchMenu('menu-settings')" class="menu-link flex items-center p-4" id="link-settings"><i class="fas fa-sliders-h w-8"></i> <span>ตั้งค่า</span></div>
@@ -169,7 +173,7 @@
                 </div>
             </section>
 
-            <!-- KPI Section -->
+            <!-- KPI Section (V.4.7 Added Excel Export) -->
             <section id="menu-kpi" class="menu-section hidden">
                 <h2 class="text-3xl font-black mb-6 text-slate-800">KPI Performance</h2>
                 <div class="bg-white p-6 rounded-2xl shadow-sm border mb-8 flex gap-4 items-end">
@@ -185,7 +189,12 @@
                         <label class="text-sm font-bold text-gray-700 uppercase block mb-1">เลือก User</label>
                         <select id="kpi_user_select" class="w-full border px-2.5 rounded-lg text-sm h-[42px]"><option value="">ทั้งหมด</option></select>
                     </div>
-                    <button onclick="loadKPI()" class="bg-blue-600 text-white px-8 h-[42px] rounded-lg font-bold shadow-md hover:bg-blue-700">ค้นหา</button>
+                    <div class="flex gap-2">
+                        <button onclick="loadKPI()" class="bg-blue-600 text-white px-8 h-[42px] rounded-lg font-bold shadow-md hover:bg-blue-700 transition">ค้นหา</button>
+                        <button onclick="exportKPIToExcel()" class="bg-green-600 text-white px-6 h-[42px] rounded-lg font-bold shadow-md hover:bg-green-700 transition flex items-center gap-2">
+                            <i class="fas fa-file-excel"></i> ดาวน์โหลด Excel
+                        </button>
+                    </div>
                 </div>
 
                 <div id="kpiStats" class="grid grid-cols-5 gap-4 mb-8">
@@ -599,25 +608,28 @@
             }]);
         }
 
-        // --- KPI SYSTEM (V.3.20) ---
+        // --- KPI SYSTEM (V.4.7 Optimized with Export) ---
         async function loadKPI() {
             const start = document.getElementById('kpi_date_start').value, 
                   end = document.getElementById('kpi_date_end').value, 
                   uid = document.getElementById('kpi_user_select').value;
             
+            kpiDataForExport = []; // เคลียร์ข้อมูลเก่า
+
             let q = sb.from('order_summaries').select('*, users!picker_id(username)')
                       .gte('checked_at', start+'T00:00:00')
                       .lte('checked_at', end+'T23:59:59');
 
             if (uid) q = q.eq('picker_id', uid);
-            const { data: summaries, error: err1 } = await q.order('checked_at', { ascending: false });
+            const { data: summaries } = await q.order('checked_at', { ascending: false });
+            
             if(!summaries || summaries.length === 0) {
                 document.getElementById('kpiTableBody').innerHTML = '<tr><td colspan="9" class="p-10 text-center italic text-gray-400">ไม่มีข้อมูลในช่วงเวลาที่เลือก</td></tr>';
                 return;
             }
 
             const orderIds = summaries.map(s => s.order_id);
-            const { data: orderTimes, error: err2 } = await sb.from('orders')
+            const { data: orderTimes } = await sb.from('orders')
                 .select('order_id, created_at, end_time')
                 .in('order_id', orderIds);
 
@@ -655,9 +667,20 @@
                     }
                 }
 
-                // ปรับขนาดตัวอักษรในแถวตารางเป็น 16px (12pt)
-                const tdClass = "p-4 text-[16px]";
+                // เก็บข้อมูลเข้าตัวแปรสำหรับ Export
+                kpiDataForExport.push({
+                    "ใบงาน (Order ID)": s.order_id,
+                    "พนักงาน": s.users?.username || '-',
+                    "รายการทั้งหมด": s.total_items,
+                    "หยิบถูก (First)": s.correct_at_first_check,
+                    "หยิบผิด (First)": s.wrong_at_first_check,
+                    "ไม่พบ (First)": s.not_find_at_first_check,
+                    "ความแม่นยำ (%)": s.accuracy_percent + "%",
+                    "เวลาหยิบสินค้า": durationText,
+                    "วันที่ตรวจเสร็จ": new Date(s.checked_at).toLocaleString('th-TH')
+                });
 
+                const tdClass = "p-4 text-[16px]";
                 return `<tr class="border-b hover:bg-gray-50 transition">
                     <td class="${tdClass} font-bold text-blue-600">${s.order_id}</td>
                     <td class="${tdClass}">${s.users?.username || '-'}</td>
@@ -677,8 +700,6 @@
 
             const avgAccuracy = stats.totalOrders > 0 ? (stats.sumAccuracy / stats.totalOrders).toFixed(2) : "0.00";
             const avgPickingTime = stats.countWithTime > 0 ? formatDuration(stats.totalPickingMs / stats.countWithTime) : "00:00:00";
-
-            // ปรับขนาด Label หัวข้อใน Card เป็น 16px (12pt)
             const labelClass = "text-[16px] font-bold uppercase opacity-80 mb-1";
 
             document.getElementById('kpiStats').innerHTML = `
@@ -691,6 +712,19 @@
             
             document.getElementById('kpiStats').className = "grid grid-cols-6 gap-4 mb-8";
             document.getElementById('kpiTableBody').innerHTML = tableRows;
+        }
+
+        // ฟังก์ชัน Export ข้อมูล KPI เป็น Excel
+        function exportKPIToExcel() {
+            if (kpiDataForExport.length === 0) return alert("ไม่มีข้อมูลสำหรับการดาวน์โหลด กรุณากดค้นหาก่อน!");
+            
+            const ws = XLSX.utils.json_to_sheet(kpiDataForExport);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "KPI_Performance");
+            
+            // สร้างชื่อไฟล์ตามวันที่กรอง
+            const fileName = `KPI_Report_${new Date().toISOString().split('T')[0]}.xlsx`;
+            XLSX.writeFile(wb, fileName);
         }
 
         // --- PICKER WORKFLOW (V.3.19) ---
@@ -816,14 +850,33 @@
         // --- REAL-TIME & SETTINGS ---
         function subscribeRealtime() {
             sb.channel('global').on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
-                // ส่งค่า true เข้าไปเพื่อให้ loadReviewDropdown ไม่ออกคำสั่ง resetReviewUI
-                if(currentUser.role === 'admin') { loadOrdersDashboard(); loadReviewDropdown(true); } 
+                if(currentUser.role === 'admin') { 
+                    loadOrdersDashboard(); 
+                    loadReviewDropdown(true); 
+                    updateReviewBadge(); // อัปเดตตัวเลขรอตรวจทันทีเมื่อมีการอัปเดตข้อมูลสินค้า
+                } 
                 else { if(currentPickerOrderId) loadPickerTask(); else loadPickerOrderList(); }
             }).on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => { 
-                if(currentUser.role === 'admin') { updateNotifBadge(); if(!document.getElementById('menu-notif').classList.contains('hidden')) loadNotifications(); } 
+                if(currentUser.role === 'admin') { 
+                    updateNotifBadge(); 
+                             updateReviewBadge(); //
+                    if(!document.getElementById('menu-notif').classList.contains('hidden')) loadNotifications(); 
+                } 
             }).subscribe();
         }
-        async function updateNotifBadge() { const { count } = await sb.from('notifications').select('*', { count: 'exact', head: true }).eq('is_read', false); const b = document.getElementById('notif-badge'); if(count > 0){ b.innerText = count; b.classList.remove('hidden'); } else { b.classList.add('hidden'); } }
+        async function updateNotifBadge() { 
+            const { count } = await sb.from('notifications').select('*', { count: 'exact', head: true }).eq('is_read', false); 
+            const b = document.getElementById('notif-badge'); 
+            if(count > 0){ b.innerText = count; b.classList.remove('hidden'); } else { b.classList.add('hidden'); } 
+        }
+
+        // ฟังก์ชันใหม่: นับจำนวนสินค้าที่มีสถานะ 'picked' ทั้งหมดในระบบ
+        async function updateReviewBadge() {
+            const { count } = await sb.from('orders').select('*', { count: 'exact', head: true }).eq('status', 'picked');
+            const b = document.getElementById('review-badge');
+            if (count > 0) { b.innerText = count; b.classList.remove('hidden'); } 
+            else { b.classList.add('hidden'); }
+        }
         async function loadNotifications() {
             const { data } = await sb.from('notifications').select('*, users!picker_id(username)').eq('status', currentNotifTab).order('created_at', { ascending: false });
             if(!data) return;
