@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WMS Smart System V.4.0</title>
+    <title>WMS Smart System V.4.5</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -223,7 +223,15 @@
                 <div class="bg-white rounded-2xl shadow-sm border overflow-hidden">
                     <table class="w-full text-left text-sm">
                         <thead class="bg-gray-50 text-[18.66px] uppercase text-slate-800 font-black border-b">
-                            <tr><th class="p-4 text-center">ลำดับ</th><th class="p-4">วัน-เวลา</th><th class="p-4">พนักงาน</th><th class="p-4">หัวข้อปัญหา</th><th class="p-4">สินค้า / จุดเก็บ</th><th class="p-4 text-center">จัดการ</th></tr>
+                            <tr>
+                                <th class="p-4 text-center">ลำดับ</th>
+                                <th class="p-4">วัน-เวลา</th>
+                                <th class="p-4">พนักงาน</th>
+                                <th class="p-4">หัวข้อปัญหา</th>
+                                <th class="p-4">สินค้า</th>
+                                <th class="p-4">จุดจัดเก็บ</th>
+                                <th class="p-4 text-center">จัดการ</th>
+                            </tr>
                         </thead>
                         <tbody id="notifList" class="divide-y text-gray-600"></tbody>
                     </table>
@@ -264,11 +272,17 @@
         <header class="p-3 border-b border-slate-800 flex justify-between items-center bg-slate-900/90 sticky top-0 z-20">
             <div class="flex items-center gap-2">
                 <button id="p-back-btn" onclick="backToPickerOrderList()" class="hidden bg-slate-700 w-8 h-8 rounded-full flex items-center justify-center"><i class="fas fa-chevron-left text-xs"></i></button>
-                <div class="flex flex-col"><span class="text-[10px] text-gray-500 font-black">พนักงาน</span><span id="p-name" class="text-sm font-bold text-blue-400">---</span></div>
+                <div class="flex flex-col">
+                    <span class="text-[16px] text-gray-500 font-black">พนักงาน</span>
+                    <span id="p-name" class="text-[18.66px] font-bold text-blue-400 leading-tight">---</span>
+                </div>
             </div>
-            <div class="flex flex-col items-center"><span class="text-[9px] text-gray-500 font-bold uppercase mb-1 text-center">ระยะเวลา</span><span id="p-timer" class="text-2xl font-mono font-black text-yellow-400">00:00:00</span></div>
+            <div class="flex flex-col items-center">
+                <span class="text-[16px] text-gray-500 font-bold uppercase mb-1 text-center">ระยะเวลา</span>
+                <span id="p-timer" class="text-2xl font-mono font-black text-yellow-400">00:00:00</span>
+            </div>
             <div class="flex flex-col items-end">
-                <button onclick="logout()" class="bg-red-600 text-white text-[10px] px-3 py-1 rounded-lg font-black mb-1">LOGOUT</button>
+                <button onclick="logout()" class="bg-red-600 text-white text-xs px-5 py-2.5 rounded-xl font-black mb-1 shadow-lg active:scale-90 transition-all">LOGOUT</button>
                 <div id="p-pagination" class="text-2xl font-black text-white leading-none hidden"><span id="p-current-idx" class="text-green-400">0</span><span class="text-gray-600 mx-1">/</span><span id="p-total-items" class="text-gray-400">0</span></div>
             </div>
         </header>
@@ -279,12 +293,41 @@
                 <h2 class="text-xl font-black mb-4">รายการใบงานที่ได้รับ</h2>
                 <div id="p-order-items-container" class="space-y-3 overflow-y-auto pb-4"></div>
             </div>
-            <!-- หน้า Card -->
-            <div id="p-job-card" class="bg-white text-slate-900 w-full rounded-[2.5rem] overflow-hidden shadow-2xl flex flex-col hidden" style="max-height: 70vh;">
-                <div class="relative flex-1 bg-gray-100 overflow-hidden"><img id="p-img" src="" class="w-full h-full object-contain"><div class="absolute top-4 left-4 bg-red-600 text-white px-5 py-2 rounded-2xl font-black text-4xl shadow-lg border-2 border-white"><span id="p-loc">---</span></div></div>
-                <div class="p-6"><h2 class="text-xl font-bold leading-tight mb-4" id="p-prod">---</h2><div class="grid grid-cols-2 gap-3 mb-4"><button onclick="openAlertModal()" class="bg-yellow-500 text-white py-4 rounded-3xl font-black text-2xl shadow-lg active:scale-95 transition-all">!!</button><button onclick="submitNoProduct()" class="bg-slate-700 text-white py-4 rounded-3xl font-black text-2xl shadow-lg active:scale-95 transition-all">X</button></div><div class="bg-slate-50 p-4 rounded-3xl border text-center"><span class="text-xs text-gray-400 font-bold uppercase">จำนวนเบิก</span><span class="text-6xl font-black text-slate-900" id="p-qty">0</span></div></div>
+            <!-- หน้า Card (Optimized Layout V.4.5) -->
+            <div id="p-job-card" class="bg-white text-slate-900 w-full rounded-[2.5rem] overflow-hidden shadow-2xl flex flex-col hidden" style="height: 72vh;">
+                <div class="relative flex-1 bg-gray-100 overflow-hidden">
+                    <img id="p-img" src="" class="w-full h-full object-contain">
+                    <div class="absolute top-4 left-4 bg-red-600 text-white px-5 py-2 rounded-2xl font-black text-2xl shadow-lg border-2 border-white z-10">
+                        <span id="p-loc">---</span>
+                    </div>
+                </div>
+                
+                <div class="p-4 bg-white">
+                    <div class="min-h-[70px] mb-2 flex items-start">
+                        <h2 class="text-[18px] font-bold leading-[1.3] text-slate-800" id="p-prod" style="display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;">---</h2>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-2 mb-3">
+                        <button onclick="openAlertModal()" class="bg-yellow-500 text-white py-3 rounded-2xl font-black text-lg shadow-md active:scale-95 flex items-center justify-center gap-2">
+                            <span>!!</span> <span class="text-sm font-bold">แจ้งเตือน</span>
+                        </button>
+                        <button onclick="submitNoProduct()" class="bg-slate-700 text-white py-3 rounded-2xl font-black text-lg shadow-md active:scale-95 flex items-center justify-center gap-2">
+                            <span>X</span> <span class="text-sm font-bold">สินค้าหมด</span>
+                        </button>
+                    </div>
+                    
+                    <div class="bg-slate-50 px-6 py-2 rounded-2xl border flex items-center justify-between">
+                        <span class="text-[18.66px] text-gray-400 font-bold uppercase">จำนวนเบิก</span>
+                        <span class="text-4xl font-black text-slate-900" id="p-qty">0</span>
+                    </div>
+                </div>
             </div>
-            <div id="picker-actions" class="flex gap-2 p-2 hidden"><button onclick="pickerNavigate(-1)" class="w-20 bg-slate-800 text-white py-6 rounded-3xl text-3xl shadow-lg"><i class="fas fa-chevron-left"></i></button><button id="p-btn-next" onclick="pickerFinishItem()" class="flex-1 bg-green-500 py-6 rounded-3xl text-2xl font-black shadow-lg">หยิบเสร็จแล้ว</button><button onclick="pickerNavigate(1)" class="w-20 bg-slate-800 text-white py-6 rounded-3xl text-3xl shadow-lg"><i class="fas fa-chevron-right"></i></button></div>
+            
+            <div id="picker-actions" class="flex gap-2 p-2 hidden">
+                <button onclick="pickerNavigate(-1)" class="w-20 bg-slate-800 text-white py-6 rounded-3xl text-3xl shadow-lg"><i class="fas fa-chevron-left"></i></button>
+                <button id="p-btn-next" onclick="pickerFinishItem()" class="flex-1 bg-green-500 py-6 rounded-3xl text-2xl font-black shadow-lg">หยิบเสร็จแล้ว</button>
+                <button onclick="pickerNavigate(1)" class="w-20 bg-slate-800 text-white py-6 rounded-3xl text-3xl shadow-lg"><i class="fas fa-chevron-right"></i></button>
+            </div>
             <div id="p-no-job" class="text-center text-slate-500 italic py-20 hidden">ไม่มีงานมอบหมาย</div>
         </div>
         <div id="alert-modal" class="hidden fixed inset-0 z-[100] bg-slate-900/95 flex items-center justify-center p-6"><div class="bg-white w-full max-w-sm rounded-[3rem] text-slate-900 shadow-2xl"><div class="p-8 bg-slate-50 border-b flex justify-between items-center"><h3 class="font-black text-2xl">เลือกปัญหา</h3><button onclick="closeAlertModal()" class="text-gray-300 hover:text-red-500 text-3xl"><i class="fas fa-times-circle"></i></button></div><div id="topic-options" class="p-6 grid grid-cols-1 gap-3 overflow-y-auto" style="max-height: 60vh;"></div></div></div>
@@ -699,8 +742,8 @@
             container.innerHTML = Object.values(grouped).map(o => `
                 <div onclick="selectPickerOrder('${o.id}')" class="bg-white p-5 rounded-3xl text-slate-800 border-2 border-transparent active:border-blue-500 flex justify-between items-center shadow-lg transition-all">
                     <div>
-                        <div class="text-[10px] text-gray-400 font-black uppercase">เลขใบงาน</div>
-                        <div class="text-xl font-black">${o.id}</div>
+                        <div class="text-[18px] text-gray-400 font-black uppercase">เลขใบงาน</div>
+                        <div class="text-2xl font-black">${o.id}</div>
                     </div>
                     <div class="bg-blue-600 text-white px-4 py-2 rounded-2xl font-black">${o.count}</div>
                 </div>`).join('');
@@ -721,7 +764,9 @@
         }
 
         async function loadPickerTask() {
-            // หยุดเวลาเดิมก่อนตรวจสอบข้อมูลใหม่
+            // หากไม่มี Order ID ที่กำลังทำอยู่ ให้ข้ามไปเลย (ป้องกันกรณี Realtime มาเรียกซ้ำตอนจัดเสร็จแล้ว)
+            if (!currentPickerOrderId) return;
+
             stopAndResetPickerTimer();
             
             const { data } = await sb.from('orders')
@@ -732,6 +777,8 @@
                 .order('created_at', { ascending: true });
             
             if (!data || data.length === 0) { 
+                // เคลียร์ค่า ID ออกทันที ก่อนจะ Alert เพื่อไม่ให้ฟังก์ชันนี้ทำงานซ้ำ
+                currentPickerOrderId = null; 
                 alert("ใบงานนี้จัดเสร็จสิ้นแล้ว!"); 
                 return loadPickerOrderList(); 
             }
@@ -753,7 +800,6 @@
             img.src = `${PROJECT_A_IMAGE_URL}${cj.product_code}.jpg`; 
             img.onerror = () => img.src = 'https://placehold.co/500x500?text=NO+IMAGE';
             
-            // เริ่มนับเวลาใหม่สำหรับงานที่ยังเหลืออยู่
             startPickerTimer(cj.created_at);
         }
 
@@ -785,7 +831,6 @@
             const { data: oDetails } = await sb.from('orders').select('order_id, product_name, location').in('order_id', oids);
             document.getElementById('notifList').innerHTML = data.map((n, idx) => {
                 const info = oDetails?.find(o => o.order_id === n.order_id) || { product_name: '---', location: '---' };
-                // ปรับขนาดตัวอักษรทุกคอลัมน์เป็น 18.66px (14pt)
                 const fontSizeClass = "text-[18.66px]"; 
                 
                 return `<tr class="border-b ${!n.is_read ? 'bg-blue-50' : ''}">
@@ -793,7 +838,8 @@
                     <td class="p-4 ${fontSizeClass}">${new Date(n.created_at).toLocaleString()}</td>
                     <td class="p-4 font-bold text-blue-600 ${fontSizeClass}">${n.users?.username || '-'}</td>
                     <td class="p-4 text-red-600 font-bold ${fontSizeClass}">${n.type}</td>
-                    <td class="p-4 ${fontSizeClass}">${info.product_name} (${info.location})</td>
+                    <td class="p-4 ${fontSizeClass}">${info.product_name}</td>
+                    <td class="p-4 font-bold text-red-600 ${fontSizeClass}">${info.location}</td>
                     <td class="p-4 text-center">
                         <div class="flex items-center justify-center gap-1">
                             ${!n.is_read ? `<button onclick="markNotifRead('${n.id}')" class="bg-slate-200 px-4 py-2 rounded-lg text-xs font-black hover:bg-slate-300">อ่านแล้ว</button>` : ''} 
