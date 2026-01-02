@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WMS Smart System V.3.2</title>
+    <title>WMS Smart System V.4.0</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -13,8 +13,11 @@
         .hidden { display: none; }
         .menu-link { transition: all 0.2s; cursor: pointer; }
         .menu-link:hover { background-color: #4b5563; }
-        #webcam { transform: scaleX(-1); border-radius: 1.5rem; background: #000; }
         .order-modal { background-color: rgba(0,0,0,0.5); }
+        .inspect-tab { cursor: pointer; transition: all 0.2s; border-bottom: 3px solid transparent; }
+        .inspect-tab-active { border-bottom: 3px solid #3b82f6; color: #3b82f6; font-weight: 900; }
+        .tab-active { background-color: #2563eb !important; color: white !important; }
+        .inspect-tab-correct-active { border-bottom: 3px solid #10b981; color: #10b981; font-weight: 900; }
     </style>
 </head>
 <body class="bg-gray-100 font-sans text-gray-800">
@@ -26,11 +29,25 @@
         
         const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
         let currentUser = null;
-        let adminStream = null;
-        let mediaRecorder = null;
-        let recordedChunks = [];
-        let currentInspectionItems = [];
-        let currentInspectionIndex = 0;
+        let pickerTimerInterval = null;
+        let currentNotifTab = 'unread'; 
+        let allOrdersData = []; 
+        
+        let currentPickerItems = [];
+        let pickerCurrentIndex = 0;
+        let currentPickerOrderId = null; // V.3.19 Feature
+        
+        let currentInspectItems = [];
+        let currentInspectTab = 'all'; 
+
+        const statusLabels = {
+            'pending': 'กำลังจัด',
+            'picked': 'หยิบแล้ว',
+            'out_of_stock': 'สินค้าหมด',
+            'correct': 'หยิบถูก',
+            'wrong': 'หยิบผิด',
+            'not_find': 'ไม่เจอสินค้า'
+        };
     </script>
 
     <!-- 1. LOGIN PAGE -->
@@ -51,58 +68,63 @@
             <div class="p-6 text-xl font-black text-white border-b border-slate-700 tracking-tighter">WMS SYSTEM</div>
             <nav class="flex-1 mt-4 text-sm font-medium">
                 <div onclick="switchMenu('menu-upload')" class="menu-link flex items-center p-4" id="link-upload"><i class="fas fa-file-import w-8"></i> <span>จัดสินค้า</span></div>
-                <div onclick="switchMenu('menu-review')" class="menu-link flex items-center p-4" id="link-review"><i class="fas fa-video w-8"></i> <span>ตรวจสินค้า</span></div>
+                <div onclick="switchMenu('menu-review')" class="menu-link flex items-center p-4" id="link-review"><i class="fas fa-tasks w-8"></i> <span>ตรวจสินค้า</span></div>
                 <div onclick="switchMenu('menu-kpi')" class="menu-link flex items-center p-4" id="link-kpi"><i class="fas fa-chart-pie w-8"></i> <span>KPI</span></div>
                 <div onclick="switchMenu('menu-notif')" class="menu-link flex items-center p-4 relative" id="link-notif"><i class="fas fa-bell w-8"></i> <span>แจ้งเตือน</span><span id="notif-badge" class="absolute right-4 bg-red-600 text-white text-[10px] px-1.5 py-0.5 rounded-full hidden font-bold">0</span></div>
                 <div onclick="switchMenu('menu-settings')" class="menu-link flex items-center p-4" id="link-settings"><i class="fas fa-sliders-h w-8"></i> <span>ตั้งค่า</span></div>
             </nav>
             <div class="p-4 border-t border-slate-700 mt-auto bg-slate-900/50">
-    <div class="flex items-center justify-between">
-        <!-- ชื่อ User พร้อมไอคอน -->
-        <div class="flex items-center text-sm font-semibold text-gray-200">
-            <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center mr-2 shadow-inner">
-                <i class="fas fa-user text-xs text-white"></i>
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center text-sm font-semibold text-gray-200">
+                        <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center mr-2 shadow-inner"><i class="fas fa-user text-xs text-white"></i></div>
+                        <span id="user-display" class="truncate max-w-[100px]">Admin</span>
+                    </div>
+                    <button onclick="logout()" class="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-500/10 text-red-400 text-xs font-bold hover:bg-red-500 hover:text-white transition-all">
+                        <span>Logout</span> <i class="fas fa-sign-out-alt"></i>
+                    </button>
+                </div>
             </div>
-            <span id="user-display" class="truncate max-w-[100px]">Admin</span>
-        </div>
-        
-        <!-- ปุ่ม Logout แบบทันสมัย -->
-        <button onclick="logout()" class="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-500/10 text-red-400 text-xs font-bold hover:bg-red-500 hover:text-white transition-all duration-300 group">
-            <span>Logout</span>
-            <i class="fas fa-sign-out-alt group-hover:translate-x-1 transition-transform"></i>
-        </button>
-    </div>
-</div>
         </aside>
 
         <main class="flex-1 overflow-y-auto p-8 bg-gray-50">
-            <!-- Menu: จัดสินค้า -->
+            <!-- จัดสินค้า Section -->
             <section id="menu-upload" class="menu-section hidden">
                 <h2 class="text-3xl font-black mb-6">จัดสินค้า</h2>
                 <div class="bg-white p-6 rounded-2xl shadow-sm border mb-8 flex gap-4 items-end">
-                    <div class="flex-1"><label class="text-[14px] font-bold text-gray-400 uppercase">1. เลือกไฟล์ Excel</label><input type="file" id="excelFile" class="w-full border p-2 rounded-lg mt-1 text-sm"></div>
-                    <div class="w-64"><label class="text-[14px] font-bold text-gray-400 uppercase">2. มอบหมายพนักงาน</label><select id="pickerSelect" class="w-full border p-2.5 rounded-lg mt-1 text-sm"></select></div>
-                    <button onclick="handleUpload()" class="bg-blue-600 text-white px-8 py-2.5 rounded-lg font-bold shadow-md hover:bg-blue-700">อัปโหลดงาน</button>
+                    <div class="flex-1">
+                        <label class="text-sm font-bold text-gray-700 uppercase">1. เลือกไฟล์ Excel</label>
+                        <input type="file" id="excelFile" class="w-full border p-2 rounded-lg mt-1 text-sm h-[42px] flex items-center">
+                    </div>
+                    <div class="w-64">
+                        <label class="text-sm font-bold text-gray-700 uppercase">2. มอบหมายพนักงาน</label>
+                        <select id="pickerSelect" class="w-full border px-2.5 rounded-lg mt-1 text-sm h-[42px]"></select>
+                    </div>
+                    <button onclick="handleUpload()" class="bg-blue-600 text-white px-8 h-[42px] rounded-lg font-bold shadow-md hover:bg-blue-700">อัปโหลดงาน</button>
                 </div>
                 <div class="bg-white p-6 rounded-2xl shadow-sm border overflow-hidden">
                     <div class="flex justify-between items-center mb-6 pb-4 border-b">
-                        <h3 class="font-bold">Dashboard รายการใบงาน (Order Sheets)</h3>
+                        <h3 class="font-bold text-slate-800">Dashboard รายการใบงาน</h3>
                         <div class="flex gap-2 items-center">
-                            <select id="filter_user" class="border p-2 rounded text-xs outline-none bg-white">
-                                <option value="">พนักงานทั้งหมด</option>
-                            </select>
-                            <input type="date" id="filter_date" class="border p-2 rounded text-xs outline-none">
-                            <button onclick="loadOrdersDashboard()" class="bg-blue-600 text-white px-4 py-1 rounded text-xs font-bold hover:bg-blue-700 transition">Filter</button>
+                            <select id="filter_user" class="border p-2 rounded text-xs bg-white outline-none h-[32px]"><option value="">พนักงานทั้งหมด</option></select>
+                            <input type="date" id="filter_date_start" class="border p-2 rounded text-xs outline-none shadow-sm h-[32px]">
+                            <span class="text-gray-400 text-xs">-</span>
+                            <input type="date" id="filter_date_end" class="border p-2 rounded text-xs outline-none shadow-sm h-[32px]">
+                            <button onclick="loadOrdersDashboard()" class="bg-blue-600 text-white px-4 py-1 rounded text-xs font-bold hover:bg-blue-700 h-[32px]">Filter</button>
                         </div>
                     </div>
                     <table class="w-full text-left text-sm">
-                        <thead class="bg-gray-100 text-[14px] uppercase text-gray-500">
+                        <thead class="bg-gray-50 text-[16px] uppercase text-gray-400">
                             <tr>
-                                <th class="p-4">ใบงาน (Order ID)</th>
-                                <th class="p-4">วันที่มอบหมาย</th>
-                                <th class="p-4">พนักงาน</th>
-                                <th class="p-4 text-center">ความคืบหน้า (หยิบ/ทั้งหมด)</th>
-                                <th class="p-4">สถานะภาพรวม</th>
+                                <th class="p-4">ใบงาน (ORDER ID)</th>
+                                <th class="p-4 text-center">มอบหมาย</th>
+                                <th class="p-4 text-center">พนักงาน</th>
+                                <th class="p-4 text-center">หยิบแล้ว</th>
+                                <th class="p-4 text-center text-red-500">หยิบผิด</th>
+                                <th class="p-4 text-center text-orange-500">ไม่พบ</th>
+                                <th class="p-4 text-center text-red-700">สินค้าหมด</th>
+                                <th class="p-4 text-center">ทั้งหมด (หยิบ/รวม)</th>
+                                <th class="p-4 text-center">สถานะภาพรวม</th>
+                                <th class="p-4 text-center">ระยะเวลาที่ใช้</th>
                                 <th class="p-4 text-center">รายละเอียด</th>
                             </tr>
                         </thead>
@@ -111,39 +133,115 @@
                 </div>
             </section>
 
-            <!-- Menu: ตรวจสินค้า / KPI / แจ้งเตือน / ตั้งค่า (เหมือนเดิม) -->
+            <!-- ตรวจสินค้า Section -->
             <section id="menu-review" class="menu-section hidden">
                 <div class="flex justify-between items-end mb-6">
-                    <h2 class="text-3xl font-black text-slate-800">ตรวจสินค้า</h2>
-                    <div class="flex gap-2">
-                        <select id="reviewOrderSelect" class="border p-2.5 rounded-lg w-64 text-sm"></select>
-                        <button onclick="startInspection()" class="bg-blue-600 text-white px-6 rounded-lg font-bold">เริ่มเช็คสินค้า</button>
+                    <div>
+                        <h2 class="text-3xl font-black text-slate-800">ตรวจสินค้า</h2>
+                        <div class="flex gap-2 mt-4 items-end">
+                            <div>
+                                <label class="text-sm font-bold text-gray-700 uppercase block mb-1">1. เลือกวันที่</label>
+                                <input type="date" id="reviewDateFilter" onchange="loadReviewDropdown(false)" class="border px-2 rounded-lg text-sm shadow-sm outline-none h-[42px]">
+                            </div>
+                            <div>
+                                <label class="text-sm font-bold text-gray-700 uppercase block mb-1">2. เลือกใบงาน</label>
+                                <select id="reviewOrderSelect" onchange="resetReviewUI()" class="border px-2.5 rounded-lg w-96 text-sm shadow-sm outline-none h-[42px]"></select>
+                            </div>
+                            <button onclick="startInspection()" class="bg-blue-600 text-white px-6 h-[42px] rounded-lg font-bold shadow-md hover:bg-blue-700">เริ่มเช็คสินค้า</button>
+                        </div>
+                    </div>
+                    <div id="inspection-counter" class="bg-white p-6 rounded-3xl shadow-xl border-t-4 border-blue-600 text-center min-w-[200px] hidden">
+                        <div class="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Checked / Total</div>
+                        <div class="text-6xl font-black text-blue-600" id="counter-text">0 / 0</div>
                     </div>
                 </div>
-                <div class="grid grid-cols-12 gap-8">
-                    <div class="col-span-4 space-y-4 h-[70vh] overflow-y-auto pr-2" id="inspectionList"></div>
-                    <div class="col-span-8">
-                        <div class="bg-slate-900 aspect-video rounded-3xl shadow-2xl relative border-8 border-white overflow-hidden">
-                            <video id="webcam" autoplay muted class="w-full h-full object-cover"></video>
-                            <div id="recStatus" class="absolute top-6 right-6 flex items-center bg-red-600 px-4 py-2 rounded-full hidden shadow-lg text-white text-[10px] font-bold uppercase tracking-widest"><span class="w-2 h-2 bg-white rounded-full animate-ping mr-2"></span>Recording</div>
-                        </div>
+                <div id="review-tabs" class="flex gap-4 border-b mb-4 px-4 hidden overflow-x-auto">
+                    <div onclick="switchInspectTab('all')" id="itab-all" class="inspect-tab pb-2 text-sm font-bold whitespace-nowrap">ทั้งหมด <span id="count-all"></span></div>
+                    <div onclick="switchInspectTab('picked')" id="itab-picked" class="inspect-tab pb-2 text-sm font-bold text-gray-500 whitespace-nowrap">ยังไม่ได้ตรวจ <span id="count-picked"></span></div>
+                    <div onclick="switchInspectTab('correct')" id="itab-correct" class="inspect-tab pb-2 text-sm font-bold text-green-600 whitespace-nowrap">หยิบถูก <span id="count-correct"></span></div>
+                    <div onclick="switchInspectTab('wrong')" id="itab-wrong" class="inspect-tab pb-2 text-sm font-bold text-red-600 whitespace-nowrap">หยิบผิด <span id="count-wrong"></span></div>
+                    <div onclick="switchInspectTab('not_find')" id="itab-not_find" class="inspect-tab pb-2 text-sm font-bold text-orange-500 whitespace-nowrap">ไม่มีสินค้า <span id="count-not_find"></span></div>
+                </div>
+                <div class="bg-white rounded-3xl shadow-sm border overflow-hidden">
+                    <div id="inspectionList" class="divide-y">
+                        <div class="p-20 text-center text-gray-300 italic">เลือกวันที่และใบงานเพื่อเริ่มการตรวจสอบ</div>
                     </div>
                 </div>
             </section>
-            
-            <section id="menu-kpi" class="menu-section hidden"><h2 class="text-3xl font-black mb-6 text-slate-800">KPI Performance</h2><div id="kpiStats" class="grid grid-cols-3 gap-6"></div></section>
-            <section id="menu-notif" class="menu-section hidden"><h2 class="text-3xl font-black mb-6 text-slate-800">ศูนย์แจ้งเตือน</h2><div class="bg-white rounded-2xl shadow-sm border overflow-hidden divide-y" id="notifList"></div></section>
+
+            <!-- KPI Section -->
+            <section id="menu-kpi" class="menu-section hidden">
+                <h2 class="text-3xl font-black mb-6 text-slate-800">KPI Performance</h2>
+                <div class="bg-white p-6 rounded-2xl shadow-sm border mb-8 flex gap-4 items-end">
+                    <div class="flex-1">
+                        <label class="text-sm font-bold text-gray-700 uppercase block mb-1">วันที่เริ่มต้น</label>
+                        <input type="date" id="kpi_date_start" class="w-full border px-2 rounded-lg text-sm h-[42px]">
+                    </div>
+                    <div class="flex-1">
+                        <label class="text-sm font-bold text-gray-700 uppercase block mb-1">วันที่สิ้นสุด</label>
+                        <input type="date" id="kpi_date_end" class="w-full border px-2 rounded-lg text-sm h-[42px]">
+                    </div>
+                    <div class="w-64">
+                        <label class="text-sm font-bold text-gray-700 uppercase block mb-1">เลือก User</label>
+                        <select id="kpi_user_select" class="w-full border px-2.5 rounded-lg text-sm h-[42px]"><option value="">ทั้งหมด</option></select>
+                    </div>
+                    <button onclick="loadKPI()" class="bg-blue-600 text-white px-8 h-[42px] rounded-lg font-bold shadow-md hover:bg-blue-700">ค้นหา</button>
+                </div>
+
+                <div id="kpiStats" class="grid grid-cols-5 gap-4 mb-8">
+                    <!-- Cards will be injected here -->
+                </div>
+
+                <div class="bg-white p-6 rounded-2xl shadow-sm border overflow-hidden">
+                    <h3 class="font-bold text-slate-800 mb-4">รายละเอียดข้อมูลจากการกรอง</h3>
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-gray-50 text-[16px] uppercase text-slate-600 font-bold border-b">
+    <tr>
+        <th class="p-4">Order ID (ใบงาน)</th>
+        <th class="p-4">พนักงานจัด</th>
+        <th class="p-4 text-center">รายการ</th>
+        <th class="p-4 text-center text-green-600">ถูก (First)</th>
+        <th class="p-4 text-center text-red-600">ผิด (First)</th>
+        <th class="p-4 text-center text-orange-600">ไม่พบ (First)</th>
+        <th class="p-4 text-center">ความแม่นยำ</th>
+        <th class="p-4 text-center text-blue-600">เวลาหยิบสินค้า</th>
+        <th class="p-4">วันที่ตรวจเสร็จ</th>
+    </tr>
+</thead>
+                        <tbody id="kpiTableBody" class="divide-y text-gray-600"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- ศูนย์แจ้งเตือน Section -->
+            <section id="menu-notif" class="menu-section hidden">
+                <h2 class="text-3xl font-black mb-6 text-slate-800">ศูนย์แจ้งเตือน</h2>
+                <div class="flex gap-2 mb-6 bg-gray-200 p-1 rounded-xl w-fit">
+                    <button onclick="changeNotifTab('unread')" id="tab-unread" class="px-6 py-2 rounded-lg font-bold transition text-sm tab-active">รายการใหม่</button>
+                    <button onclick="changeNotifTab('fixed')" id="tab-fixed" class="px-6 py-2 rounded-lg font-bold transition text-sm">แก้ไขแล้ว</button>
+                </div>
+                <div class="bg-white rounded-2xl shadow-sm border overflow-hidden">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-gray-50 text-[18.66px] uppercase text-slate-800 font-black border-b">
+                            <tr><th class="p-4 text-center">ลำดับ</th><th class="p-4">วัน-เวลา</th><th class="p-4">พนักงาน</th><th class="p-4">หัวข้อปัญหา</th><th class="p-4">สินค้า / จุดเก็บ</th><th class="p-4 text-center">จัดการ</th></tr>
+                        </thead>
+                        <tbody id="notifList" class="divide-y text-gray-600"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- ตั้งค่าระบบ Section -->
             <section id="menu-settings" class="menu-section hidden">
                 <h2 class="text-3xl font-black mb-6 text-slate-800">ตั้งค่าระบบ</h2>
                 <div class="grid grid-cols-2 gap-8">
-                    <div class="bg-white p-6 rounded-2xl border shadow-sm"><h3 class="font-bold text-gray-400 text-[10px] uppercase tracking-widest mb-4 border-b pb-2 text-slate-800">จัดการพนักงาน</h3><div class="space-y-3 mb-6 bg-gray-50 p-4 rounded-xl"><input type="text" id="nu" placeholder="Username" class="w-full border p-2.5 rounded-lg text-sm"><input type="text" id="np" placeholder="Password" class="w-full border p-2.5 rounded-lg text-sm"><select id="nr" class="w-full border p-2.5 rounded-lg text-sm"><option value="picker">Picker (ผู้จัด)</option><option value="admin">Admin (ผู้ตรวจ)</option></select><button onclick="addUser()" class="w-full bg-blue-600 text-white py-2.5 rounded-lg font-bold text-sm shadow-md hover:bg-blue-700">+ เพิ่มพนักงาน</button></div><div id="userList" class="divide-y max-h-64 overflow-y-auto"></div></div>
-                    <div class="bg-white p-6 rounded-2xl border shadow-sm"><h3 class="font-bold text-gray-400 text-[10px] uppercase tracking-widest mb-4 border-b pb-2 text-slate-800">หัวข้อแจ้งเตือน</h3><div class="flex gap-2 mb-4"><input type="text" id="nt" class="flex-1 border p-2.5 rounded-lg text-sm" placeholder="เพิ่มหัวข้อใหม่..."><button onclick="addTopic()" class="bg-slate-800 text-white px-5 rounded-lg font-bold hover:bg-black transition">+</button></div><div id="topicList" class="divide-y max-h-96 overflow-y-auto"></div></div>
+                    <div class="bg-white p-6 rounded-2xl border shadow-sm"><h3 class="font-bold text-gray-400 text-[16px] uppercase tracking-widest mb-4 border-b pb-2 text-slate-800">จัดการพนักงาน</h3><div class="space-y-3 mb-6 bg-gray-50 p-4 rounded-xl"><input type="text" id="nu" placeholder="Username" class="w-full border p-2.5 rounded-lg text-sm"><input type="text" id="np" placeholder="Password" class="w-full border p-2.5 rounded-lg text-sm"><select id="nr" class="w-full border p-2.5 rounded-lg text-sm"><option value="picker">Picker (ผู้จัด)</option><option value="admin">Admin (ผู้ตรวจ)</option></select><button onclick="addUser()" class="w-full bg-blue-600 text-white py-2.5 rounded-lg font-bold text-sm shadow-md hover:bg-blue-700">+ เพิ่มพนักงาน</button></div><div id="userList" class="divide-y max-h-64 overflow-y-auto"></div></div>
+                    <div class="bg-white p-6 rounded-2xl border shadow-sm"><h3 class="font-bold text-gray-400 text-[16px] uppercase tracking-widest mb-4 border-b pb-2 text-slate-800">หัวข้อแจ้งเตือน</h3><div class="flex gap-2 mb-4"><input type="text" id="nt" class="flex-1 border p-2.5 rounded-lg text-sm" placeholder="เพิ่มหัวข้อใหม่..."><button onclick="addTopic()" class="bg-slate-800 text-white px-5 rounded-lg font-bold hover:bg-black transition">+</button></div><div id="topicList" class="divide-y max-h-96 overflow-y-auto"></div></div>
                 </div>
             </section>
         </main>
     </div>
 
-    <!-- 3. MODAL FOR ORDER DETAILS -->
+    <!-- MODAL FOR ORDER DETAILS -->
     <div id="detail-modal" class="hidden fixed inset-0 z-50 order-modal flex items-center justify-center p-4">
         <div class="bg-white w-full max-w-4xl max-h-[90vh] rounded-3xl overflow-hidden flex flex-col shadow-2xl">
             <div class="p-6 border-b flex justify-between items-center bg-slate-50">
@@ -152,14 +250,8 @@
             </div>
             <div class="flex-1 overflow-y-auto p-6">
                 <table class="w-full text-left text-sm">
-                    <thead class="bg-gray-50 text-[14px] uppercase text-gray-500">
-                        <tr>
-                            <th class="p-3">รูปภาพ</th>
-                            <th class="p-3">สินค้า</th>
-                            <th class="p-3">จุดเก็บ</th>
-                            <th class="p-3">จำนวน</th>
-                            <th class="p-3">สถานะรายการ</th>
-                        </tr>
+                    <thead class="bg-gray-50 text-[13px] uppercase font-bold">
+                        <tr><th class="p-3">รูป</th><th class="p-3">สินค้า</th><th class="p-3">จุดเก็บ</th><th class="p-3">จำนวน</th><th class="p-3">สถานะ</th><th class="p-3 text-center">จัดการ</th></tr>
                     </thead>
                     <tbody id="modal-body" class="divide-y"></tbody>
                 </table>
@@ -167,92 +259,53 @@
         </div>
     </div>
 
-    <!-- 3. MOBILE PICKER LAYOUT (V.3.3 - ปรับปรุงใหม่หน้าเดียวไม่เลื่อน) -->
+    <!-- MOBILE PICKER LAYOUT -->
     <div id="picker-layout" class="hidden h-screen bg-slate-900 text-white flex flex-col overflow-hidden">
-        <!-- ส่วนหัว: แสดงชื่อ, เวลา, และลำดับงาน -->
-        <!-- Header: ปรับปรุงใหม่ V.3.4 -->
         <header class="p-3 border-b border-slate-800 flex justify-between items-center bg-slate-900/90 sticky top-0 z-20">
-            <!-- ซ้าย: พนักงาน -->
-            <div class="flex flex-col">
-                <span class="text-[10px] text-gray-500 uppercase font-black">พนักงาน</span>
-                <span id="p-name" class="text-sm font-bold text-blue-400 leading-none">---</span>
+            <div class="flex items-center gap-2">
+                <button id="p-back-btn" onclick="backToPickerOrderList()" class="hidden bg-slate-700 w-8 h-8 rounded-full flex items-center justify-center"><i class="fas fa-chevron-left text-xs"></i></button>
+                <div class="flex flex-col"><span class="text-[10px] text-gray-500 font-black">พนักงาน</span><span id="p-name" class="text-sm font-bold text-blue-400">---</span></div>
             </div>
-            
-            <!-- กลาง: เวลา (HH:MM นาที) -->
-            <div class="flex flex-col items-center">
-                <span class="text-[10px] text-gray-500 uppercase font-black">เวลาที่ใช้</span>
-                <div class="flex items-baseline gap-1">
-                    <span id="p-timer" class="text-xl font-mono font-black text-yellow-400">00:00</span>
-                    <span class="text-[10px] text-yellow-400 font-bold">ชั่วโมง:นาที</span>
-                </div>
-            </div>
-
-            <!-- ขวา: ลำดับ และ ปุ่ม Logout -->
-            <div class="flex flex-col items-end gap-1">
-                <button onclick="logout()" class="bg-red-600 text-white text-[10px] px-3 py-1.5 rounded-lg font-black shadow-lg active:scale-95 transition-all">
-                    LOGOUT
-                </button>
-                <span class="text-[10px] font-bold text-gray-400">
-                    <span id="p-current-idx" class="text-green-400">0</span> / <span id="p-total-items">0</span>
-                </span>
+            <div class="flex flex-col items-center"><span class="text-[9px] text-gray-500 font-bold uppercase mb-1 text-center">ระยะเวลา</span><span id="p-timer" class="text-2xl font-mono font-black text-yellow-400">00:00:00</span></div>
+            <div class="flex flex-col items-end">
+                <button onclick="logout()" class="bg-red-600 text-white text-[10px] px-3 py-1 rounded-lg font-black mb-1">LOGOUT</button>
+                <div id="p-pagination" class="text-2xl font-black text-white leading-none hidden"><span id="p-current-idx" class="text-green-400">0</span><span class="text-gray-600 mx-1">/</span><span id="p-total-items" class="text-gray-400">0</span></div>
             </div>
         </header>
 
-        <!-- ส่วนเนื้อหา: รูปและปุ่มแจ้งเตือน -->
         <div id="picker-content" class="flex-1 flex flex-col p-4 justify-between overflow-hidden">
+            <!-- หน้ารายการใบงาน -->
+            <div id="p-order-list-view" class="flex-1 flex flex-col overflow-hidden">
+                <h2 class="text-xl font-black mb-4">รายการใบงานที่ได้รับ</h2>
+                <div id="p-order-items-container" class="space-y-3 overflow-y-auto pb-4"></div>
+            </div>
+            <!-- หน้า Card -->
             <div id="p-job-card" class="bg-white text-slate-900 w-full rounded-[2.5rem] overflow-hidden shadow-2xl flex flex-col hidden" style="max-height: 70vh;">
-                <!-- รูปภาพสินค้า (ปรับให้พอดีจอ) -->
-                <div class="relative flex-1 bg-gray-100 overflow-hidden">
-                    <img id="p-img" src="" class="w-full h-full object-contain">
-                    <div class="absolute top-4 left-4 bg-red-600 text-white px-5 py-2 rounded-2xl font-black text-4xl shadow-lg border-2 border-white">
-                        <span id="p-loc">---</span>
-                    </div>
-                </div>
-                
-                <div class="p-6">
-                    <h2 class="text-xl font-bold leading-tight mb-4 text-slate-800 line-clamp-2" id="p-prod">---</h2>
-                    <div class="flex items-center justify-between bg-slate-50 p-4 rounded-3xl border border-slate-100">
-                        <div class="flex flex-col">
-                            <span class="text-xs text-gray-400 font-bold uppercase">จำนวนเบิก</span>
-                            <span class="text-5xl font-black text-slate-900" id="p-qty">0</span>
-                        </div>
-                        <!-- ปุ่มแจ้งเตือนขนาดใหญ่ -->
-                        <button onclick="openAlertModal()" class="bg-yellow-500 text-white px-8 py-5 rounded-2xl font-black text-xl shadow-lg active:scale-95 transition-transform flex items-center gap-2">
-                            <i class="fas fa-exclamation-triangle text-2xl"></i> แจ้งปัญหา
-                        </button>
-                    </div>
-                </div>
+                <div class="relative flex-1 bg-gray-100 overflow-hidden"><img id="p-img" src="" class="w-full h-full object-contain"><div class="absolute top-4 left-4 bg-red-600 text-white px-5 py-2 rounded-2xl font-black text-4xl shadow-lg border-2 border-white"><span id="p-loc">---</span></div></div>
+                <div class="p-6"><h2 class="text-xl font-bold leading-tight mb-4" id="p-prod">---</h2><div class="grid grid-cols-2 gap-3 mb-4"><button onclick="openAlertModal()" class="bg-yellow-500 text-white py-4 rounded-3xl font-black text-2xl shadow-lg active:scale-95 transition-all">!!</button><button onclick="submitNoProduct()" class="bg-slate-700 text-white py-4 rounded-3xl font-black text-2xl shadow-lg active:scale-95 transition-all">X</button></div><div class="bg-slate-50 p-4 rounded-3xl border text-center"><span class="text-xs text-gray-400 font-bold uppercase">จำนวนเบิก</span><span class="text-6xl font-black text-slate-900" id="p-qty">0</span></div></div>
             </div>
-
-            <!-- ปุ่มใหญ่สำหรับกดไปรายการถัดไป -->
-            <button id="p-btn-next" onclick="pickerFinishItem()" class="w-full bg-green-500 py-8 rounded-[2.5rem] text-4xl font-black shadow-lg shadow-green-900/40 hidden active:scale-95 transition-all border-b-8 border-green-700 mt-2">
-                หยิบเสร็จแล้ว
-            </button>
-
-            <div id="p-no-job" class="text-center text-slate-500 italic py-20">
-                <i class="fas fa-box-open text-6xl mb-4 block opacity-20"></i>
-                ไม่มีงานที่ได้รับมอบหมาย
-            </div>
+            <div id="picker-actions" class="flex gap-2 p-2 hidden"><button onclick="pickerNavigate(-1)" class="w-20 bg-slate-800 text-white py-6 rounded-3xl text-3xl shadow-lg"><i class="fas fa-chevron-left"></i></button><button id="p-btn-next" onclick="pickerFinishItem()" class="flex-1 bg-green-500 py-6 rounded-3xl text-2xl font-black shadow-lg">หยิบเสร็จแล้ว</button><button onclick="pickerNavigate(1)" class="w-20 bg-slate-800 text-white py-6 rounded-3xl text-3xl shadow-lg"><i class="fas fa-chevron-right"></i></button></div>
+            <div id="p-no-job" class="text-center text-slate-500 italic py-20 hidden">ไม่มีงานมอบหมาย</div>
         </div>
-
-        <!-- หน้าต่างเลือกหัวข้อแจ้งเตือน (แทน prompt เดิม) -->
-        <div id="alert-modal" class="hidden fixed inset-0 z-[100] bg-slate-900/95 flex items-center justify-center p-6 transition-all">
-            <div class="bg-white w-full max-w-sm rounded-[3rem] overflow-hidden text-slate-900 shadow-2xl scale-in">
-                <div class="p-8 bg-slate-50 border-b flex justify-between items-center">
-                    <h3 class="font-black text-2xl">เลือกปัญหาที่พบ</h3>
-                    <button onclick="closeAlertModal()" class="text-gray-300 hover:text-red-500 text-3xl transition-colors"><i class="fas fa-times-circle"></i></button>
-                </div>
-                <div id="topic-options" class="p-6 grid grid-cols-1 gap-3 overflow-y-auto" style="max-height: 60vh;">
-                    <!-- รายการหัวข้อจะถูกโหลดใส่ที่นี่ -->
-                </div>
-            </div>
-        </div>
+        <div id="alert-modal" class="hidden fixed inset-0 z-[100] bg-slate-900/95 flex items-center justify-center p-6"><div class="bg-white w-full max-w-sm rounded-[3rem] text-slate-900 shadow-2xl"><div class="p-8 bg-slate-50 border-b flex justify-between items-center"><h3 class="font-black text-2xl">เลือกปัญหา</h3><button onclick="closeAlertModal()" class="text-gray-300 hover:text-red-500 text-3xl"><i class="fas fa-times-circle"></i></button></div><div id="topic-options" class="p-6 grid grid-cols-1 gap-3 overflow-y-auto" style="max-height: 60vh;"></div></div></div>
     </div>
 
     <script>
-        // --- DATA CACHE ---
-        let allOrdersData = []; 
+        // --- HELPER FUNCTIONS ---
+        function formatDuration(ms) {
+            if (ms < 0 || isNaN(ms)) return "00:00:00";
+            let s = Math.floor(ms / 1000);
+            let h = Math.floor(s / 3600); s %= 3600;
+            let m = Math.floor(s / 60); s %= 60;
+            return `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
+        }
 
+        function calculateDuration(startTime, endTime) {
+            const s = new Date(startTime), e = endTime ? new Date(endTime) : new Date();
+            return formatDuration(e - s);
+        }
+
+        // --- CORE AUTH ---
         async function handleLogin() {
             const u = document.getElementById('l_user').value;
             const p = document.getElementById('l_pass').value;
@@ -263,317 +316,624 @@
             if (currentUser.role === 'admin') {
                 document.getElementById('admin-layout').classList.remove('hidden');
                 document.getElementById('user-display').innerText = currentUser.username;
+                const today = new Date().toISOString().split('T')[0];
+                document.getElementById('filter_date_start').value = today;
+                document.getElementById('filter_date_end').value = today;
+                document.getElementById('reviewDateFilter').value = today;
+                document.getElementById('kpi_date_start').value = today;
+                document.getElementById('kpi_date_end').value = today;
                 switchMenu('menu-upload');
-                initAdminWebcam();
                 subscribeRealtime();
                 loadSettings();
+                updateNotifBadge();
             } else {
                 document.getElementById('picker-layout').classList.remove('hidden');
                 document.getElementById('p-name').innerText = currentUser.username;
-                loadPickerTask();
+                loadPickerOrderList();
                 subscribeRealtime();
             }
         }
 
+        // --- ADMIN DASHBOARD ---
+        async function loadOrdersDashboard() {
+            const ds = document.getElementById('filter_date_start').value, de = document.getElementById('filter_date_end').value, uf = document.getElementById('filter_user').value;
+            let q = sb.from('orders').select('*, users(username)');
+            if(ds) q = q.gte('created_at', ds + 'T00:00:00');
+            if(de) q = q.lte('created_at', de + 'T23:59:59');
+            if(uf) q = q.eq('assigned_to', uf);
+            const { data } = await q.order('created_at', { ascending: false });
+            allOrdersData = data || [];
+            const grouped = allOrdersData.reduce((acc, obj) => {
+                const key = obj.order_id + (obj.assigned_to || ''); 
+                if (!acc[key]) acc[key] = { id: obj.order_id, picked_count: 0, wrong_count: 0, not_find_count: 0, oos_count: 0, total: 0, assigned: obj.users?.username || '---', date: obj.created_at, max_end: null, items: [] };
+                acc[key].items.push(obj);
+                acc[key].total++; 
+                if (['picked', 'correct', 'wrong', 'not_find'].includes(obj.status)) acc[key].picked_count++;
+                if (obj.status === 'wrong') acc[key].wrong_count++;
+                if (obj.status === 'not_find') acc[key].not_find_count++;
+                if (obj.status === 'out_of_stock') acc[key].oos_count++;
+                if (obj.end_time) {
+                    const ce = new Date(obj.end_time);
+                    if (!acc[key].max_end || ce > new Date(acc[key].max_end)) acc[key].max_end = obj.end_time;
+                }
+                return acc;
+            }, {});
+
+            document.getElementById('dashboardBody').innerHTML = Object.values(grouped).map(o => {
+                const isWorking = o.items.some(i => ['pending', 'wrong', 'not_find'].includes(i.status));
+                const calculation = (o.picked_count - o.wrong_count - o.not_find_count);
+                // กำหนดคลาสสำหรับขนาดตัวอักษร 16px (12pt)
+                const cellClass = "p-4 text-[16px]";
+
+                return `<tr class="hover:bg-blue-50 border-b transition">
+                    <td class="${cellClass} font-black text-blue-600">${o.id}</td>
+                    <td class="${cellClass} text-center text-gray-500 text-xs">${new Date(o.date).toLocaleString('th-TH')}</td>
+                    <td class="${cellClass} text-center font-bold text-slate-700">${o.assigned}</td>
+                    <td class="${cellClass} text-center font-bold text-blue-600">${o.picked_count}</td>
+                    <td class="${cellClass} text-center font-bold text-red-600">${o.wrong_count}</td>
+                    <td class="${cellClass} text-center font-bold text-orange-600">${o.not_find_count}</td>
+                    <td class="${cellClass} text-center font-bold text-red-800">${o.oos_count}</td>
+                    <td class="${cellClass} text-center font-bold text-gray-500">${calculation} / ${o.total}</td>
+                    <td class="${cellClass} text-center"><span class="px-3 py-1 rounded text-xs font-bold uppercase ${!isWorking ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}">${!isWorking ? 'COMPLETED' : 'IN PROGRESS'}</span></td>
+                    <td class="${cellClass} text-center font-mono text-blue-600 font-bold admin-timer-cell" data-start="${o.date}" data-finished="${!isWorking}">${calculateDuration(o.date, !isWorking ? o.max_end : null)}</td>
+                    <td class="${cellClass} text-center"><button onclick="openDetailModal('${o.id}')" class="text-blue-500 font-bold underline">View</button></td>
+                </tr>`}).join('');
+            if (window.adminLiveInterval) clearInterval(window.adminLiveInterval);
+            startAdminLiveTimer();
+        }
+
+        function startAdminLiveTimer() {
+            window.adminLiveInterval = setInterval(() => {
+                document.querySelectorAll('.admin-timer-cell').forEach(c => {
+                    if (c.getAttribute('data-finished') === 'false') c.innerText = calculateDuration(c.getAttribute('data-start'), null);
+                });
+            }, 1000);
+        }
+
+        // --- ADMIN REVIEW ---
+        // ฟังก์ชันสำหรับล้างหน้าจอการตรวจ (Reset UI)
+        function resetReviewUI() {
+            document.getElementById('inspection-counter').classList.add('hidden');
+            document.getElementById('review-tabs').classList.add('hidden');
+            document.getElementById('inspectionList').innerHTML = '<div class="p-20 text-center text-gray-300 italic">เลือกวันที่และใบงานเพื่อเริ่มการตรวจสอบ</div>';
+            document.getElementById('counter-text').innerText = "0 / 0";
+            currentInspectItems = [];
+        }
+
+        async function loadReviewDropdown(skipReset = true) {
+            const date = document.getElementById('reviewDateFilter').value;
+            
+            // จะรีเซต UI เฉพาะเมื่อสั่ง (เช่น เปลี่ยนวันที่) 
+            // แต่ถ้าเป็นการอัปเดตข้อมูลเบื้องหลัง (Realtime) จะไม่รีเซตหน้าจอ
+            if(!skipReset) resetReviewUI(); 
+
+            if(!date) return;
+            const { data } = await sb.from('orders').select('order_id, status').gte('created_at', date + 'T00:00:00').lte('created_at', date + 'T23:59:59');
+            if(!data) return;
+            const grouped = data.reduce((acc, obj) => {
+                if(!acc[obj.order_id]) acc[obj.order_id] = { id: obj.order_id, picked: 0, oos: 0, total: 0 };
+                acc[obj.order_id].total++;
+                if(['picked'].includes(obj.status)) acc[obj.order_id].picked++;
+                if(obj.status === 'out_of_stock') acc[obj.order_id].oos++;
+                const isFinished = ['picked', 'correct', 'wrong', 'not_find', 'out_of_stock'].includes(obj.status);
+                if(!acc[obj.order_id].finished_count) acc[obj.order_id].finished_count = 0;
+                if(isFinished) acc[obj.order_id].finished_count++;
+                return acc;
+            }, {});
+            
+            const completed = Object.values(grouped).filter(o => o.finished_count === o.total);
+            
+            // เก็บค่าที่เลือกไว้ปัจจุบัน
+            const currentSelected = document.getElementById('reviewOrderSelect').value;
+            
+            document.getElementById('reviewOrderSelect').innerHTML = completed.length ? '<option value="">-- เลือกใบงานที่จัดเสร็จแล้ว --</option>' + completed.map(o => `<option value="${o.id}">${o.id} (${o.total} รายการ) [ยังไม่ได้ตรวจ ${o.picked} รายการ]</option>`).join('') : '<option value="">ไม่มีใบงานที่พร้อมตรวจ</option>';
+            
+            // คืนค่าใบงานที่เลือกอยู่เดิม (เพื่อไม่ให้ Dropdown กระโดด)
+            if(currentSelected) document.getElementById('reviewOrderSelect').value = currentSelected;
+        }
+
+        async function startInspection() {
+            const oid = document.getElementById('reviewOrderSelect').value;
+            if(!oid) return alert("เลือกใบงาน!");
+            const items = allOrdersData.filter(i => i.order_id === oid);
+            if (items.length > 0 && items.some(i => ['pending'].includes(i.status))) return alert("ไม่อนุญาตให้ตรวจเนื่องจากใบงานยังไม่เสร็จสิ้น (IN PROGRESS)");
+            const { data } = await sb.from('orders').select('*').eq('order_id', oid).order('location', {ascending: true});
+            currentInspectItems = data || [];
+            document.getElementById('inspection-counter').classList.remove('hidden');
+            document.getElementById('review-tabs').classList.remove('hidden');
+            renderInspectionList();
+        }
+
+        function switchInspectTab(tab) {
+            currentInspectTab = tab;
+            document.querySelectorAll('.inspect-tab').forEach(el => el.classList.remove('inspect-tab-active', 'inspect-tab-correct-active'));
+            const activeTab = document.getElementById('itab-' + tab);
+            if (tab === 'correct') activeTab.classList.add('inspect-tab-correct-active'); else activeTab.classList.add('inspect-tab-active');
+            renderInspectionList();
+        }
+
+        function renderInspectionList() {
+            const list = document.getElementById('inspectionList'), oid = document.getElementById('reviewOrderSelect').value;
+            const counts = { all: currentInspectItems.length, picked: currentInspectItems.filter(i => i.status === 'picked').length, correct: currentInspectItems.filter(i => i.status === 'correct').length, wrong: currentInspectItems.filter(i => i.status === 'wrong').length, not_find: currentInspectItems.filter(i => i.status === 'not_find').length };
+            document.getElementById('count-all').innerText = `(${counts.all})`;
+            document.getElementById('count-picked').innerText = `(${counts.picked})`;
+            document.getElementById('count-correct').innerText = `(${counts.correct})`;
+            document.getElementById('count-wrong').innerText = `(${counts.wrong})`;
+            document.getElementById('count-not_find').innerText = `(${counts.not_find})`;
+
+            let filtered = currentInspectItems;
+            if (currentInspectTab === 'picked') filtered = currentInspectItems.filter(i => i.status === 'picked');
+            if (currentInspectTab === 'correct') filtered = currentInspectItems.filter(i => i.status === 'correct');
+            if (currentInspectTab === 'wrong') filtered = currentInspectItems.filter(i => i.status === 'wrong');
+            if (currentInspectTab === 'not_find') filtered = currentInspectItems.filter(i => i.status === 'not_find');
+            
+            const checkedCount = currentInspectItems.filter(i => ['correct', 'wrong', 'not_find', 'out_of_stock'].includes(i.status)).length;
+            document.getElementById('counter-text').innerText = `${checkedCount} / ${currentInspectItems.length}`;
+            
+            if (filtered.length === 0) { 
+                list.innerHTML = `<div class="p-20 text-center text-gray-300 italic">ไม่มีรายการในหมวดหมู่ ${currentInspectTab.toUpperCase()}</div>`; 
+                return; 
+            }
+            
+            list.innerHTML = filtered.map((item, idx) => {
+                // กำหนดสีตามสถานะตรงกลาง
+                let statusBoxClass = "";
+                if (item.status === 'correct') statusBoxClass = "border-green-500 text-green-500";
+                else if (item.status === 'wrong') statusBoxClass = "border-red-500 text-red-500";
+                else if (item.status === 'not_find') statusBoxClass = "border-orange-500 text-orange-500";
+
+                return `
+                <div class="p-4 flex items-center justify-between hover:bg-gray-50 transition">
+                    <div class="flex items-center gap-6 w-1/3">
+                        <div class="text-xl font-black text-gray-300 w-8 text-center">${idx + 1}</div>
+                        <img src="${PROJECT_A_IMAGE_URL}${item.product_code}.jpg" class="w-20 h-20 object-cover rounded-xl border shadow-sm" onerror="this.src='https://placehold.co/200x200?text=NO+IMAGE'">
+                        <div>
+                            <div class="text-[18.66px] font-black text-slate-800 leading-tight mb-1">${item.product_name}</div>
+                            <div class="text-[16px] font-bold text-gray-400">จุดจัดเก็บ: ${item.location || '-'} | จำนวน: ${item.qty}</div>
+                        </div>
+                    </div>
+                    <div class="flex-1 text-center px-4">
+                        ${['correct', 'wrong', 'not_find'].includes(item.status) ? 
+                            `<div class="border-2 ${statusBoxClass} font-black px-6 py-2 rounded-xl text-lg uppercase tracking-wider">
+                                สถานะ: ${statusLabels[item.status]}
+                            </div>` : ''}
+                    </div>
+                    <div class="flex items-center gap-2 w-1/3 justify-end">
+                        <button onclick="setInspectStatus('${item.id}', 'not_find', '${oid}')" class="h-14 px-4 rounded-2xl font-black border-2 border-orange-200 text-orange-500 hover:bg-orange-50 transition">ไม่เจอ</button>
+                        <button onclick="setInspectStatus('${item.id}', 'wrong', '${oid}')" class="h-14 px-4 rounded-2xl font-black border-2 border-red-200 text-red-500 ${item.status === 'wrong' ? 'bg-red-600 text-white' : 'hover:bg-red-50'} transition">หยิบผิด</button>
+                        <button onclick="setInspectStatus('${item.id}', 'correct', '${oid}')" class="h-14 px-4 rounded-2xl font-black bg-green-500 text-white hover:bg-green-600 shadow-md transition">หยิบถูก</button>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        async function setInspectStatus(id, newStatus, oid) {
+            const item = currentInspectItems.find(i => i.id === id);
+            let updateData = { status: newStatus };
+
+            // บวกเลขสะสมประวัติความผิดพลาด (Counter)
+            if (newStatus === 'wrong') updateData.error_count = (item.error_count || 0) + 1;
+            if (newStatus === 'not_find') updateData.not_find_count = (item.not_find_count || 0) + 1;
+
+            await sb.from('orders').update(updateData).eq('id', id);
+
+            // โหลดข้อมูลใหม่หลังจาก Update
+            const { data } = await sb.from('orders').select('*').eq('order_id', oid);
+            currentInspectItems = data || [];
+
+            // ตรวจสอบว่าเช็คครบทุกชิ้นหรือยัง (สถานะต้องไม่ใช่ pending หรือ picked)
+            const isFullyChecked = currentInspectItems.every(i => ['correct', 'wrong', 'not_find', 'out_of_stock'].includes(i.status));
+
+            if (isFullyChecked) {
+                // บันทึกเวลาจบงาน
+                await sb.from('orders').update({ end_time: new Date().toISOString() }).eq('order_id', oid);
+                // สร้างสรุป KPI ครั้งแรก (First Check)
+                await saveFirstCheckSummary(oid, currentInspectItems);
+            }
+            renderInspectionList();
+        }
+
+        async function saveFirstCheckSummary(oid, items) {
+            // ตรวจสอบก่อนว่าเคยมีสรุปของใบงานนี้หรือยัง (First Check Only)
+            const { data: existing } = await sb.from('order_summaries').select('id').eq('order_id', oid).single();
+            if (existing) return; // ถ้ามีแล้ว ไม่บันทึกซ้ำ (รักษาค่าตรวจครั้งแรกไว้)
+
+            const total = items.length;
+            const correct = items.filter(i => i.status === 'correct').length;
+            const wrong = items.filter(i => i.status === 'wrong').length;
+            const notFind = items.filter(i => i.status === 'not_find').length;
+            const accuracy = total > 0 ? ((correct / total) * 100).toFixed(2) : 0;
+
+            await sb.from('order_summaries').insert([{
+                order_id: oid,
+                picker_id: items[0].assigned_to,
+                total_items: total,
+                correct_at_first_check: correct,
+                wrong_at_first_check: wrong,
+                not_find_at_first_check: notFind,
+                accuracy_percent: accuracy,
+                checked_at: new Date().toISOString()
+            }]);
+        }
+
+        // --- KPI SYSTEM (V.3.20) ---
+        async function loadKPI() {
+            const start = document.getElementById('kpi_date_start').value, 
+                  end = document.getElementById('kpi_date_end').value, 
+                  uid = document.getElementById('kpi_user_select').value;
+            
+            let q = sb.from('order_summaries').select('*, users!picker_id(username)')
+                      .gte('checked_at', start+'T00:00:00')
+                      .lte('checked_at', end+'T23:59:59');
+
+            if (uid) q = q.eq('picker_id', uid);
+            const { data: summaries, error: err1 } = await q.order('checked_at', { ascending: false });
+            if(!summaries || summaries.length === 0) {
+                document.getElementById('kpiTableBody').innerHTML = '<tr><td colspan="9" class="p-10 text-center italic text-gray-400">ไม่มีข้อมูลในช่วงเวลาที่เลือก</td></tr>';
+                return;
+            }
+
+            const orderIds = summaries.map(s => s.order_id);
+            const { data: orderTimes, error: err2 } = await sb.from('orders')
+                .select('order_id, created_at, end_time')
+                .in('order_id', orderIds);
+
+            const timeMap = {};
+            if (orderTimes) {
+                orderTimes.forEach(ot => {
+                    if (!timeMap[ot.order_id]) timeMap[ot.order_id] = { start: new Date(ot.created_at), end: ot.end_time ? new Date(ot.end_time) : null };
+                    const currentStart = new Date(ot.created_at);
+                    const currentEnd = ot.end_time ? new Date(ot.end_time) : null;
+                    if (currentStart < timeMap[ot.order_id].start) timeMap[ot.order_id].start = currentStart;
+                    if (currentEnd && (!timeMap[ot.order_id].end || currentEnd > timeMap[ot.order_id].end)) timeMap[ot.order_id].end = currentEnd;
+                });
+            }
+
+            let stats = { 
+                totalOrders: summaries.length, 
+                sumCorrect: 0, sumWrong: 0, sumNotFind: 0, sumAccuracy: 0, 
+                totalPickingMs: 0, countWithTime: 0 
+            };
+
+            const tableRows = summaries.map(s => {
+                stats.sumCorrect += s.correct_at_first_check;
+                stats.sumWrong += s.wrong_at_first_check;
+                stats.sumNotFind += s.not_find_at_first_check;
+                stats.sumAccuracy += parseFloat(s.accuracy_percent);
+
+                let durationText = "-";
+                const times = timeMap[s.order_id];
+                if (times && times.start && times.end) {
+                    const diff = times.end - times.start;
+                    if (diff > 0) {
+                        durationText = formatDuration(diff);
+                        stats.totalPickingMs += diff;
+                        stats.countWithTime++;
+                    }
+                }
+
+                // ปรับขนาดตัวอักษรในแถวตารางเป็น 16px (12pt)
+                const tdClass = "p-4 text-[16px]";
+
+                return `<tr class="border-b hover:bg-gray-50 transition">
+                    <td class="${tdClass} font-bold text-blue-600">${s.order_id}</td>
+                    <td class="${tdClass}">${s.users?.username || '-'}</td>
+                    <td class="${tdClass} text-center">${s.total_items}</td>
+                    <td class="${tdClass} text-center text-green-600 font-bold">${s.correct_at_first_check}</td>
+                    <td class="${tdClass} text-center text-red-600 font-bold">${s.wrong_at_first_check}</td>
+                    <td class="${tdClass} text-center text-orange-500 font-bold">${s.not_find_at_first_check}</td>
+                    <td class="${tdClass} text-center">
+                        <span class="px-2 py-1 rounded-lg font-black ${s.accuracy_percent >= 90 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">
+                            ${s.accuracy_percent}%
+                        </span>
+                    </td>
+                    <td class="${tdClass} text-center font-mono font-bold text-blue-700">${durationText}</td>
+                    <td class="${tdClass} text-gray-400 text-xs">${new Date(s.checked_at).toLocaleString('th-TH')}</td>
+                </tr>`;
+            }).join('');
+
+            const avgAccuracy = stats.totalOrders > 0 ? (stats.sumAccuracy / stats.totalOrders).toFixed(2) : "0.00";
+            const avgPickingTime = stats.countWithTime > 0 ? formatDuration(stats.totalPickingMs / stats.countWithTime) : "00:00:00";
+
+            // ปรับขนาด Label หัวข้อใน Card เป็น 16px (12pt)
+            const labelClass = "text-[16px] font-bold uppercase opacity-80 mb-1";
+
+            document.getElementById('kpiStats').innerHTML = `
+                <div class="bg-blue-600 text-white p-5 rounded-2xl text-center shadow-md"><div class="${labelClass}">ใบงานที่ตรวจแล้ว</div><div class="text-3xl font-black">${stats.totalOrders}</div></div>
+                <div class="bg-green-500 text-white p-5 rounded-2xl text-center shadow-md"><div class="${labelClass}">หยิบถูกรวม</div><div class="text-3xl font-black">${stats.sumCorrect}</div></div>
+                <div class="bg-red-500 text-white p-5 rounded-2xl text-center shadow-md"><div class="${labelClass}">หยิบผิดรวม</div><div class="text-3xl font-black">${stats.sumWrong}</div></div>
+                <div class="bg-orange-500 text-white p-5 rounded-2xl text-center shadow-md"><div class="${labelClass}">ไม่เจอรอบแรก</div><div class="text-3xl font-black">${stats.sumNotFind}</div></div>
+                <div class="bg-slate-700 text-white p-5 rounded-2xl text-center shadow-md"><div class="${labelClass}">ความแม่นยำเฉลี่ย</div><div class="text-3xl font-black">${avgAccuracy}%</div></div>
+                <div class="bg-indigo-600 text-white p-5 rounded-2xl text-center shadow-md border-l-4 border-indigo-300"><div class="${labelClass}">เฉลี่ยเวลาหยิบ</div><div class="text-2xl font-mono font-black">${avgPickingTime}</div></div>`;
+            
+            document.getElementById('kpiStats').className = "grid grid-cols-6 gap-4 mb-8";
+            document.getElementById('kpiTableBody').innerHTML = tableRows;
+        }
+
+        // --- PICKER WORKFLOW (V.3.19) ---
+        // ฟังก์ชันช่วยหยุดเวลาและรีเซ็ตหน้าจอ (Helper)
+        function stopAndResetPickerTimer() {
+            if (pickerTimerInterval) {
+                clearInterval(pickerTimerInterval);
+                pickerTimerInterval = null;
+            }
+            document.getElementById('p-timer').innerText = "00:00:00";
+        }
+
+        async function loadPickerOrderList() {
+            stopAndResetPickerTimer(); // หยุดเวลาทันทีเมื่อโหลดหน้าลิสต์
+            currentPickerOrderId = null;
+            
+            const { data } = await sb.from('orders')
+                .select('order_id, created_at, status')
+                .eq('assigned_to', currentUser.id)
+                .in('status', ['pending', 'wrong', 'not_find']);
+
+            const container = document.getElementById('p-order-items-container');
+            const listView = document.getElementById('p-order-list-view');
+            const jobCard = document.getElementById('p-job-card');
+            const actions = document.getElementById('picker-actions');
+            const backBtn = document.getElementById('p-back-btn');
+            const pagination = document.getElementById('p-pagination');
+            const noJob = document.getElementById('p-no-job');
+            
+            jobCard.classList.add('hidden'); 
+            actions.classList.add('hidden'); 
+            backBtn.classList.add('hidden'); 
+            pagination.classList.add('hidden');
+            
+            if (!data || data.length === 0) { 
+                listView.classList.add('hidden'); 
+                noJob.classList.remove('hidden'); 
+                return; 
+            }
+            
+            noJob.classList.add('hidden'); 
+            listView.classList.remove('hidden');
+            const grouped = data.reduce((acc, obj) => { 
+                if (!acc[obj.order_id]) acc[obj.order_id] = { id: obj.order_id, count: 0, date: obj.created_at }; 
+                acc[obj.order_id].count++; 
+                return acc; 
+            }, {});
+
+            container.innerHTML = Object.values(grouped).map(o => `
+                <div onclick="selectPickerOrder('${o.id}')" class="bg-white p-5 rounded-3xl text-slate-800 border-2 border-transparent active:border-blue-500 flex justify-between items-center shadow-lg transition-all">
+                    <div>
+                        <div class="text-[10px] text-gray-400 font-black uppercase">เลขใบงาน</div>
+                        <div class="text-xl font-black">${o.id}</div>
+                    </div>
+                    <div class="bg-blue-600 text-white px-4 py-2 rounded-2xl font-black">${o.count}</div>
+                </div>`).join('');
+        }
+
+        function selectPickerOrder(id) { 
+            currentPickerOrderId = id; 
+            pickerCurrentIndex = 0; 
+            document.getElementById('p-order-list-view').classList.add('hidden'); 
+            document.getElementById('p-back-btn').classList.remove('hidden'); 
+            document.getElementById('p-pagination').classList.remove('hidden'); 
+            loadPickerTask(); 
+        }
+
+        function backToPickerOrderList() { 
+            stopAndResetPickerTimer();
+            loadPickerOrderList(); 
+        }
+
+        async function loadPickerTask() {
+            // หยุดเวลาเดิมก่อนตรวจสอบข้อมูลใหม่
+            stopAndResetPickerTimer();
+            
+            const { data } = await sb.from('orders')
+                .select('*')
+                .eq('assigned_to', currentUser.id)
+                .eq('order_id', currentPickerOrderId)
+                .in('status', ['pending', 'wrong', 'not_find'])
+                .order('created_at', { ascending: true });
+            
+            if (!data || data.length === 0) { 
+                alert("ใบงานนี้จัดเสร็จสิ้นแล้ว!"); 
+                return loadPickerOrderList(); 
+            }
+            
+            currentPickerItems = data; 
+            if (pickerCurrentIndex >= data.length) pickerCurrentIndex = 0;
+            const cj = currentPickerItems[pickerCurrentIndex]; 
+            currentUser.currentOrder = cj;
+            
+            document.getElementById('p-job-card').classList.remove('hidden'); 
+            document.getElementById('picker-actions').classList.remove('hidden');
+            document.getElementById('p-loc').innerText = cj.location || '-'; 
+            document.getElementById('p-prod').innerText = cj.product_name; 
+            document.getElementById('p-qty').innerText = cj.qty;
+            document.getElementById('p-current-idx').innerText = pickerCurrentIndex + 1; 
+            document.getElementById('p-total-items').innerText = data.length;
+            
+            const img = document.getElementById('p-img'); 
+            img.src = `${PROJECT_A_IMAGE_URL}${cj.product_code}.jpg`; 
+            img.onerror = () => img.src = 'https://placehold.co/500x500?text=NO+IMAGE';
+            
+            // เริ่มนับเวลาใหม่สำหรับงานที่ยังเหลืออยู่
+            startPickerTimer(cj.created_at);
+        }
+
+        function startPickerTimer(start) { 
+            if (pickerTimerInterval) clearInterval(pickerTimerInterval);
+            pickerTimerInterval = setInterval(() => { 
+                document.getElementById('p-timer').innerText = calculateDuration(start, null); 
+            }, 1000); 
+        }
+        function pickerNavigate(dir) { pickerCurrentIndex += dir; if (pickerCurrentIndex < 0) pickerCurrentIndex = currentPickerItems.length - 1; if (pickerCurrentIndex >= currentPickerItems.length) pickerCurrentIndex = 0; loadPickerTask(); }
+        async function pickerFinishItem() { if (!currentUser.currentOrder) return; await sb.from('orders').update({ status: 'picked', end_time: new Date().toISOString() }).eq('id', currentUser.currentOrder.id); pickerCurrentIndex = 0; loadPickerTask(); }
+        async function submitNoProduct() { if (!currentUser.currentOrder) return; if(confirm("แจ้งสินค้าหมด?")) { await sb.from('orders').update({ status: 'out_of_stock', end_time: new Date().toISOString() }).eq('id', currentUser.currentOrder.id); await sb.from('notifications').insert([{ type: 'สินค้าหมด (X)', order_id: currentUser.currentOrder.order_id, picker_id: currentUser.id, status: 'unread', is_read: false }]); pickerCurrentIndex = 0; loadPickerTask(); } }
+
+        // --- REAL-TIME & SETTINGS ---
+        function subscribeRealtime() {
+            sb.channel('global').on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
+                // ส่งค่า true เข้าไปเพื่อให้ loadReviewDropdown ไม่ออกคำสั่ง resetReviewUI
+                if(currentUser.role === 'admin') { loadOrdersDashboard(); loadReviewDropdown(true); } 
+                else { if(currentPickerOrderId) loadPickerTask(); else loadPickerOrderList(); }
+            }).on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => { 
+                if(currentUser.role === 'admin') { updateNotifBadge(); if(!document.getElementById('menu-notif').classList.contains('hidden')) loadNotifications(); } 
+            }).subscribe();
+        }
+        async function updateNotifBadge() { const { count } = await sb.from('notifications').select('*', { count: 'exact', head: true }).eq('is_read', false); const b = document.getElementById('notif-badge'); if(count > 0){ b.innerText = count; b.classList.remove('hidden'); } else { b.classList.add('hidden'); } }
+        async function loadNotifications() {
+            const { data } = await sb.from('notifications').select('*, users!picker_id(username)').eq('status', currentNotifTab).order('created_at', { ascending: false });
+            if(!data) return;
+            const oids = [...new Set(data.map(n => n.order_id))];
+            const { data: oDetails } = await sb.from('orders').select('order_id, product_name, location').in('order_id', oids);
+            document.getElementById('notifList').innerHTML = data.map((n, idx) => {
+                const info = oDetails?.find(o => o.order_id === n.order_id) || { product_name: '---', location: '---' };
+                // ปรับขนาดตัวอักษรทุกคอลัมน์เป็น 18.66px (14pt)
+                const fontSizeClass = "text-[18.66px]"; 
+                
+                return `<tr class="border-b ${!n.is_read ? 'bg-blue-50' : ''}">
+                    <td class="p-4 text-center ${fontSizeClass}">${idx+1}</td>
+                    <td class="p-4 ${fontSizeClass}">${new Date(n.created_at).toLocaleString()}</td>
+                    <td class="p-4 font-bold text-blue-600 ${fontSizeClass}">${n.users?.username || '-'}</td>
+                    <td class="p-4 text-red-600 font-bold ${fontSizeClass}">${n.type}</td>
+                    <td class="p-4 ${fontSizeClass}">${info.product_name} (${info.location})</td>
+                    <td class="p-4 text-center">
+                        <div class="flex items-center justify-center gap-1">
+                            ${!n.is_read ? `<button onclick="markNotifRead('${n.id}')" class="bg-slate-200 px-4 py-2 rounded-lg text-xs font-black hover:bg-slate-300">อ่านแล้ว</button>` : ''} 
+                            ${currentNotifTab === 'unread' ? `<button onclick="markNotifFixed('${n.id}')" class="bg-green-600 text-white px-4 py-2 rounded-lg text-xs font-black ml-1 hover:bg-green-700">แก้ไขแล้ว</button>` : `<span class="text-green-500 font-bold ${fontSizeClass}">✔ Fixed</span>`}
+                        </div>
+                    </td>
+                </tr>`;
+            }).join('');
+        }
+        async function markNotifRead(id) { await sb.from('notifications').update({ is_read: true }).eq('id', id); updateNotifBadge(); loadNotifications(); }
+        async function markNotifFixed(id) { await sb.from('notifications').update({ status: 'fixed', is_read: true }).eq('id', id); updateNotifBadge(); loadNotifications(); }
+        function changeNotifTab(tab) { currentNotifTab = tab; document.getElementById('tab-unread').classList.toggle('tab-active', tab === 'unread'); document.getElementById('tab-fixed').classList.toggle('tab-active', tab === 'fixed'); loadNotifications(); }
+
+        async function loadSettings() {
+            const { data: users } = await sb.from('users').select('*').order('username');
+            if(users) {
+                document.getElementById('userList').innerHTML = users.map(u => `<div class="flex justify-between items-center py-2 text-sm"><div><b>${u.username}</b> (${u.role})</div><button onclick="deleteUser('${u.id}')" class="text-red-400"><i class="fas fa-trash-alt"></i></button></div>`).join('');
+                const pickers = users.filter(u => u.role === 'picker').map(u => `<option value="${u.id}">${u.username}</option>`).join('');
+                document.getElementById('pickerSelect').innerHTML = '<option value="">-- เลือกพนักงาน --</option>' + pickers;
+                document.getElementById('filter_user').innerHTML = '<option value="">พนักงานทั้งหมด</option>' + pickers;
+                document.getElementById('kpi_user_select').innerHTML = '<option value="">ทั้งหมด</option>' + pickers;
+            }
+            const { data: topics } = await sb.from('notification_topics').select('*').order('topic_name');
+            if(topics) document.getElementById('topicList').innerHTML = topics.map(t => `<div class="flex justify-between items-center py-2 text-sm"><div>${t.topic_name}</div><button onclick="deleteTopic('${t.id}')" class="text-red-300"><i class="fas fa-times"></i></button></div>`).join('');
+        }
+        async function addUser() { const u = document.getElementById('nu').value, p = document.getElementById('np').value, r = document.getElementById('nr').value; if(!u || !p) return; await sb.from('users').insert([{ username: u, password: p, role: r }]); loadSettings(); }
+        async function addTopic() { const v = document.getElementById('nt').value; if(!v) return; await sb.from('notification_topics').insert([{ topic_name: v }]); document.getElementById('nt').value = ""; loadSettings(); }
+        async function deleteUser(id) { await sb.from('users').delete().eq('id', id); loadSettings(); }
+        async function deleteTopic(id) { await sb.from('notification_topics').delete().eq('id', id); loadSettings(); }
+
+        // --- UPLOAD EXCEL ---
+        async function handleUpload() {
+            const f = document.getElementById('excelFile').files[0], pid = document.getElementById('pickerSelect').value;
+            if(!f || !pid) return alert("เลือกไฟล์และพนักงาน!");
+            const r = new FileReader();
+            r.onload = async (e) => {
+                const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+                const mainSheet = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+                if (mainSheet.length === 0) return alert("ไม่มีข้อมูลใน Sheet 1!");
+                const foids = [...new Set(mainSheet.map(row => String(row['รหัสทำรายการ'])))];
+                const { data: ex } = await sb.from('orders').select('order_id').in('order_id', foids).limit(1);
+                if (ex && ex.length > 0) return alert(`❌ ใบงาน ${ex[0].order_id} มีอยู่แล้ว`);
+                const iData = mainSheet.map(row => ({ order_id: String(row['รหัสทำรายการ']), product_code: String(row['รหัสสินค้า']), product_name: String(row['รายการสินค้า']), location: String(row['จุดเก็บ']), qty: row['จำนวนเบิก'], assigned_to: pid }));
+                await sb.from('orders').insert(iData);
+                if (wb.SheetNames.length > 1) {
+                    const spareSheet = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[1]]);
+                    if (spareSheet.length > 0) {
+                        for (const oid of foids) {
+                            const partsWorkflow = spareSheet.map(row => ({ order_id: oid, product_code: 'SPARE_PART', product_name: String(row['รายการ']), location: 'อะไหล่', qty: row['จำนวน'], assigned_to: pid }));
+                            await sb.from('orders').insert(partsWorkflow);
+                        }
+                    }
+                }
+                alert("✅ สำเร็จ!"); document.getElementById('excelFile').value = ""; loadOrdersDashboard();
+            };
+            r.readAsArrayBuffer(f);
+        }
+
+        // --- COMMON UI ---
         function switchMenu(m) {
             document.querySelectorAll('.menu-section').forEach(s => s.classList.add('hidden'));
             document.querySelectorAll('.menu-link').forEach(l => l.classList.remove('sidebar-item-active'));
             document.getElementById(m).classList.remove('hidden');
             document.getElementById('link-' + m.split('-')[1]).classList.add('sidebar-item-active');
-            if(m === 'menu-settings') loadSettings();
-            if(m === 'menu-review') loadReadyOrders();
+            
+            // ล้างค่าหน้าจอตรวจสินค้าเมื่อสลับเมนู เพื่อไม่ให้ค่าค้าง
+            if (m !== 'menu-review') {
+                resetReviewUI();
+            }
+
             if(m === 'menu-upload') loadOrdersDashboard();
             if(m === 'menu-notif') loadNotifications();
+            if(m === 'menu-settings') loadSettings();
             if(m === 'menu-kpi') loadKPI();
+            if(m === 'menu-review') loadReviewDropdown();
         }
-
-        // --- DASHBOARD GROUPING LOGIC ---
-        async function loadOrdersDashboard() {
-            const dateFilter = document.getElementById('filter_date').value;
-            const userFilter = document.getElementById('filter_user').value; // เพิ่มตัวกรอง User
-            
-            let query = sb.from('orders').select('*, users(username)');
-            
-            // กรองตามวันที่
-            if(dateFilter) query = query.gte('created_at', dateFilter + 'T00:00:00').lte('created_at', dateFilter + 'T23:59:59');
-            
-            // กรองตามพนักงาน (assigned_to)
-            if(userFilter) query = query.eq('assigned_to', userFilter);
-            
-            const { data } = await query.order('created_at', { ascending: false });
-            allOrdersData = data || [];
-
-            // Group by order_id
-            const grouped = allOrdersData.reduce((acc, obj) => {
-                const key = obj.order_id;
-                if (!acc[key]) acc[key] = { id: key, items: [], picked: 0, total: 0, assigned: obj.users?.username, date: obj.created_at };
-                acc[key].items.push(obj);
-                acc[key].total++;
-                if (obj.status !== 'pending') acc[key].picked++;
-                return acc;
-            }, {});
-
-            const body = document.getElementById('dashboardBody');
-            const sortedOrders = Object.values(grouped);
-            
-            body.innerHTML = sortedOrders.length ? sortedOrders.map(o => {
-                const isComplete = o.picked === o.total;
-                return `
-                <tr class="hover:bg-blue-50 border-b border-gray-100 transition">
-                    <td class="p-4 font-black text-blue-600">${o.id}</td>
-                    <td class="p-4 text-base">${new Date(o.date).toLocaleString('th-TH')}</td>
-                    <td class="p-4 text-base font-bold text-slate-700">${o.assigned || '---'}</td>
-                    <td class="p-4 text-base">
-                        <div class="text-base font-black">${o.picked} / ${o.total}</div>
-                        <div class="w-full bg-gray-200 rounded-full h-1 mt-1">
-                            <div class="bg-blue-600 h-1 rounded-full" style="width: ${(o.picked/o.total)*100}%"></div>
-                        </div>
-                    </td>
-                    <td class="p-4">
-                        <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase ${isComplete ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}">
-                            ${isComplete ? 'COMPLETED' : 'IN PROGRESS'}
-                        </span>
-                    </td>
-                    <td class="p-4 text-center">
-                        <button onclick="openDetailModal('${o.id}')" class="text-blue-500 hover:text-blue-800 font-bold text-xs underline">
-                            <i class="fas fa-eye mr-1"></i> View
-                        </button>
-                    </td>
-                </tr>
-            `;}).join('') : '<tr><td colspan="6" class="p-10 text-center text-gray-400 italic">No data found</td></tr>';
-        }
-
-        // --- MODAL LOGIC
         function openDetailModal(orderId) {
             const items = allOrdersData.filter(d => d.order_id === orderId);
             document.getElementById('modal-title').innerText = `ใบงาน: ${orderId}`;
-            const body = document.getElementById('modal-body');
-            
-            body.innerHTML = items.map(item => {
-                const imgSrc = `${PROJECT_A_IMAGE_URL}${item.product_code}.jpg`; // ลบ .js ออกแล้ว
-                return `
-                <tr class="hover:bg-blue-50 border-b transition">
-                    <td class="p-4">
-                        <img src="${imgSrc}" 
-                             onclick="window.open('${imgSrc}', '_blank')"
-                             class="w-16 h-16 rounded-xl shadow-md border-2 border-white cursor-pointer hover:scale-110 transition duration-300 object-cover"
-                             onerror="this.onerror=null; this.src='https://placehold.co/100x100?text=NO+IMAGE';">
-                    </td>
-                    <td class="p-4">
-                        <div class="font-black text-slate-800 text-xs">${item.product_name}</div>
-                        <div class="text-[10px] text-gray-400 mt-1">${item.product_code}</div>
-                    </td>
-                    <td class="p-4 text-red-600 font-black text-xs uppercase tracking-tighter">${item.location}</td>
-                    <td class="p-4 text-center font-black text-slate-700">${item.qty}</td>
-                    <td class="p-4">
-                        <span class="px-2 py-1 rounded-md text-[9px] font-black uppercase ${getStatusClass(item.status)}">${item.status}</span>
-                    </td>
-                </tr>
-            `;}).join('');
-            
+            renderModalBody(items, orderId);
             document.getElementById('detail-modal').classList.remove('hidden');
         }
-
-        function closeDetailModal() {
-            document.getElementById('detail-modal').classList.add('hidden');
-        }
-
-        // --- REST OF THE LOGIC (SAME AS V3.1) ---
-        async function handleUpload() {
-            const file = document.getElementById('excelFile').files[0];
-            const pickerId = document.getElementById('pickerSelect').value;
-            if(!file || !pickerId) return alert("เลือกไฟล์และพนักงานก่อน!");
-            const reader = new FileReader();
-            reader.onload = async (e) => {
-                const workbook = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
-                const orders = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
-                const parts = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[1]]);
-                const orderData = orders.map(r => ({ order_id: String(r['รหัสทำรายการ']), product_code: String(r['รหัสสินค้า']), product_name: String(r['รายการสินค้า']), location: String(r['จุดเก็บ']), qty: r['จำนวนเบิก'], assigned_to: pickerId }));
-                const partData = parts.map(r => ({ order_id: String(r['รหัสทำรายการ']), part_name: r['รายการ'], qty: r['จำนวน'] }));
-                const { error: err1 } = await sb.from('orders').insert(orderData);
-                const { error: err2 } = await sb.from('order_parts').insert(partData);
-                if(!err1) { alert("อัปโหลดและจ่ายงานสำเร็จ!"); loadOrdersDashboard(); }
+        function renderModalBody(items, orderId) {
+            const dropdownStatuses = ['pending', 'picked', 'out_of_stock'];
+            
+            // กำหนดสีตามสถานะ
+            const statusColorMap = {
+                'pending': 'bg-yellow-100 text-yellow-800 border-yellow-300',
+                'picked': 'bg-blue-100 text-blue-800 border-blue-300',
+                'out_of_stock': 'bg-red-100 text-red-800 border-red-300',
+                'correct': 'bg-green-100 text-green-800 border-green-300',
+                'wrong': 'bg-red-600 text-white border-red-700',
+                'not_find': 'bg-orange-100 text-orange-800 border-orange-300'
             };
-            reader.readAsArrayBuffer(file);
-        }
 
-        async function loadSettings() {
-            const { data: users } = await sb.from('users').select('*').order('created_at', { ascending: false });
-            document.getElementById('userList').innerHTML = users.map(u => `<div class="flex justify-between items-center py-2"><div class="text-sm font-bold">${u.username} <span class="text-[10px] font-normal text-gray-400">(${u.role})</span></div><button onclick="deleteUser('${u.id}')" class="text-red-400"><i class="fas fa-trash-alt"></i></button></div>`).join('');
-            document.getElementById('pickerSelect').innerHTML = '<option value="">-- เลือกพนักงาน --</option>' + users.filter(u => u.role === 'picker').map(u => `<option value="${u.id}">${u.username}</option>`).join('');
-            document.getElementById('filter_user').innerHTML = '<option value="">พนักงานทั้งหมด</option>' + users.filter(u => u.role === 'picker').map(u => `<option value="${u.id}">${u.username}</option>`).join('');
-            const { data: topics } = await sb.from('notification_topics').select('*').order('created_at', { ascending: false });
-            document.getElementById('topicList').innerHTML = topics.map(t => `<div class="flex justify-between items-center py-2"><div class="text-sm">${t.topic_name}</div><button onclick="deleteTopic('${t.id}')" class="text-red-300"><i class="fas fa-times"></i></button></div>`).join('');
-        }
-
-        async function addUser() {
-            const u = document.getElementById('nu').value, p = document.getElementById('np').value, r = document.getElementById('nr').value;
-            if(!u || !p) return;
-            await sb.from('users').insert([{ username: u, password: p, role: r }]);
-            loadSettings();
-        }
-
-        function getStatusClass(s) {
-            const map = { 'pending': 'bg-gray-100', 'picked': 'bg-blue-100 text-blue-700', 'correct': 'bg-green-100 text-green-700', 'wrong': 'bg-red-100 text-red-700' };
-            return map[s] || 'bg-gray-50';
-        }
-
-        async function initAdminWebcam() {
-            try { adminStream = await navigator.mediaDevices.getUserMedia({ video: true }); document.getElementById('webcam').srcObject = adminStream; } 
-            catch(e) { console.warn("Cam init error"); }
-        }
-        // --- NEW PICKER LOGIC V.3.3 ---
-        let pickerTimerInterval;
-
-        async function loadPickerTask() {
-            if (pickerTimerInterval) clearInterval(pickerTimerInterval);
-
-            // 1. ดึงงานที่ได้รับมอบหมายรายการแรก
-            const { data: job } = await sb.from('orders')
-                .select('*')
-                .eq('assigned_to', currentUser.id)
-                .eq('status', 'pending')
-                .order('created_at', { ascending: true })
-                .limit(1);
-
-            const jobCard = document.getElementById('p-job-card');
-            const nextBtn = document.getElementById('p-btn-next');
-            const noJobLabel = document.getElementById('p-no-job');
-
-            if (job && job.length > 0) {
-                const currentJob = job[0];
-                currentUser.currentOrder = currentJob;
-
-                // 2. คำนวณลำดับ (หาว่าใบงานนี้มีกี่ชิ้น และเราทำไปกี่ชิ้นแล้ว)
-                const { count: totalCount } = await sb.from('orders')
-                    .select('*', { count: 'exact', head: true })
-                    .eq('order_id', currentJob.order_id);
-
-                const { count: doneCount } = await sb.from('orders')
-                    .select('*', { count: 'exact', head: true })
-                    .eq('order_id', currentJob.order_id)
-                    .neq('status', 'pending');
-
-                // 3. แสดงผลข้อมูล
-                jobCard.classList.remove('hidden');
-                nextBtn.classList.remove('hidden');
-                noJobLabel.classList.add('hidden');
-
-                document.getElementById('p-loc').innerText = currentJob.location;
-                document.getElementById('p-prod').innerText = currentJob.product_name;
-                document.getElementById('p-qty').innerText = currentJob.qty;
-                document.getElementById('p-current-idx').innerText = (doneCount || 0) + 1;
-                document.getElementById('p-total-items').innerText = totalCount || 0;
+            document.getElementById('modal-body').innerHTML = items.map(item => {
+                const currentColorClass = statusColorMap[item.status] || 'bg-gray-100';
                 
-                // จัดการรูปภาพ
-                const pImg = document.getElementById('p-img');
-                pImg.src = `${PROJECT_A_IMAGE_URL}${currentJob.product_code}.jpg`;
-                pImg.onerror = () => { pImg.src = 'https://placehold.co/500x500?text=NO+IMAGE'; };
-
-                // 4. เริ่มตัวนับเวลา (นับจากเวลาที่งานถูกอัปโหลด/มอบหมาย)
-                startPickerTimer(currentJob.created_at);
-            } else {
-                jobCard.classList.add('hidden');
-                nextBtn.classList.add('hidden');
-                noJobLabel.classList.remove('hidden');
-                document.getElementById('p-timer').innerText = "00:00";
-            }
+                return `
+                <tr>
+                    <td class="p-3">
+                        <img src="${PROJECT_A_IMAGE_URL}${item.product_code}.jpg" class="w-10 h-10 rounded shadow-sm" onerror="this.src='https://placehold.co/100x100?text=NO+IMG';">
+                    </td>
+                    <td class="p-3">
+                        <div class="font-bold text-slate-700">${item.product_name}</div>
+                        <div class="text-[10px] text-gray-400">${item.product_code === 'SPARE_PART' ? 'อะไหล่' : item.product_code}</div>
+                    </td>
+                    <td class="p-3 text-red-600 font-bold">${item.location || '-'}</td>
+                    <td class="p-3 text-center font-bold">${item.qty}</td>
+                    <td class="p-3">
+                        <select onchange="updateItemStatus('${item.id}', this.value, '${orderId}')" 
+                                class="text-[11px] p-1.5 border rounded-lg font-bold outline-none transition-colors ${currentColorClass}">
+                            ${dropdownStatuses.map(s => `
+                                <option value="${s}" class="bg-white text-slate-800" ${item.status === s ? 'selected' : ''}>
+                                    ${statusLabels[s]}
+                                </option>
+                            `).join('')}
+                            ${!dropdownStatuses.includes(item.status) ? `
+                                <option value="${item.status}" selected disabled class="bg-white text-slate-800">
+                                    ${statusLabels[item.status]}
+                                </option>
+                            ` : ''}
+                        </select>
+                    </td>
+                    <td class="p-3 text-center">
+                        <button onclick="deleteOrderItem('${item.id}', '${orderId}')" class="text-red-400 hover:text-red-600 transition">
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
+                    </td>
+                </tr>`;
+            }).join('');
         }
-
-        function startPickerTimer(startTimeStr) {
-            const start = new Date(startTimeStr).getTime();
-            if (pickerTimerInterval) clearInterval(pickerTimerInterval); // เคลียร์ของเก่าก่อนเริ่มใหม่
-
-            pickerTimerInterval = setInterval(() => {
-                const now = new Date().getTime();
-                const diff = Math.floor((now - start) / 1000); // ระยะเวลาเป็นวินาที
-                
-                const hrs = Math.floor(diff / 3600);
-                const mins = Math.floor((diff % 3600) / 60);
-                
-                // แสดงผลรูปแบบ HH:MM (วินาทียังนับอยู่เบื้องหลังแต่ไม่โชว์ เพื่อความสะอาดของหน้าจอ)
-                document.getElementById('p-timer').innerText = 
-                    `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
-            }, 1000);
-        }
-
-        async function pickerFinishItem() {
-            if (!currentUser.currentOrder) return;
-            const { error } = await sb.from('orders')
-                .update({ status: 'picked', start_time: new Date() })
-                .eq('id', currentUser.currentOrder.id);
-            if (!error) loadPickerTask();
-        }
-
-        // --- ระบบแจ้งเตือนแบบเลือกรายการ ---
-        function openAlertModal() {
-            document.getElementById('alert-modal').classList.remove('hidden');
-            loadAlertTopics();
-        }
-
-        function closeAlertModal() {
-            document.getElementById('alert-modal').classList.add('hidden');
-        }
-
-        async function loadAlertTopics() {
-            const { data: topics } = await sb.from('notification_topics').select('topic_name');
-            const container = document.getElementById('topic-options');
-            if(!topics || topics.length === 0) {
-                container.innerHTML = `<p class="text-center text-gray-400 py-4 font-bold">ไม่มีหัวข้อแจ้งเตือนในระบบ</p>`;
-                return;
-            }
-            container.innerHTML = topics.map(t => `
-                <button onclick="submitPickerAlert('${t.topic_name}')" class="w-full text-left p-6 bg-slate-50 hover:bg-blue-50 active:bg-blue-100 rounded-[2rem] border border-slate-100 font-black text-xl text-slate-700 transition-all flex justify-between items-center group">
-                    <span>${t.topic_name}</span>
-                    <i class="fas fa-chevron-right text-slate-300 group-hover:text-blue-500"></i>
-                </button>
-            `).join('');
-        }
-
-        async function submitPickerAlert(topicName) {
-            if (!currentUser.currentOrder) return;
-            const { error } = await sb.from('notifications').insert([{ 
-                type: topicName, 
-                order_id: currentUser.currentOrder.order_id, 
-                picker_id: currentUser.id 
-            }]);
-            if(!error) {
-                alert("ส่งการแจ้งเตือนไปยังแอดมินแล้ว");
-                closeAlertModal();
-            }
-        }
-        function subscribeRealtime() {
-            sb.channel('any').on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
-                if(currentUser.role === 'admin') { loadReadyOrders(); loadOrdersDashboard(); loadKPI(); }
-                else { loadPickerTask(); }
-            }).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, () => {
-                if(currentUser.role === 'admin') { loadNotifications(); updateNotifBadge(); }
-            }).subscribe();
-        }
-
-        async function loadNotifications() {
-            const { data } = await sb.from('notifications').select('*, users(username)').order('created_at', { ascending: false });
-            document.getElementById('notifList').innerHTML = data && data.length ? data.map(n => `<div class="p-4 flex justify-between items-center"><div class="text-red-600 font-bold text-sm">${n.type}</div><div>${n.status === 'unread' ? `<button onclick="fixNotif('${n.id}')" class="bg-blue-600 text-white px-3 py-1 rounded text-[10px]">Fix</button>` : `<span class="text-green-500 text-[10px]">✔ Fixed</span>`}</div></div>`).join('') : '';
-        }
-
-        async function loadKPI() {
-            const { data } = await sb.from('orders').select('*').in('status', ['correct', 'wrong']);
-            const total = data.length, correct = data.filter(o => o.status === 'correct').length;
-            document.getElementById('kpiStats').innerHTML = `<div class="bg-white p-6 rounded-2xl border shadow-sm"><div class="text-3xl font-black">${total}</div><div class="text-[10px] text-gray-400">Total Packed</div></div><div class="bg-white p-6 rounded-2xl border shadow-sm"><div class="text-3xl font-black">${total > 0 ? ((correct/total)*100).toFixed(1) : 0}%</div><div class="text-[10px] text-green-500 font-bold uppercase">Accuracy</div></div>`;
-        }
-
-        async function updateNotifBadge() {
-            const { count } = await sb.from('notifications').select('*', { count: 'exact', head: true }).eq('status', 'unread');
-            const badge = document.getElementById('notif-badge');
-            if (count > 0) { badge.innerText = count; badge.classList.remove('hidden'); } else { badge.classList.add('hidden'); }
-        }
-
-        function logout() { 
-            if(pickerTimerInterval) clearInterval(pickerTimerInterval);
-            location.reload(); 
-        }
-        async function deleteUser(id) { await sb.from('users').delete().eq('id', id); loadSettings(); }
-        async function deleteTopic(id) { await sb.from('notification_topics').delete().eq('id', id); loadSettings(); }
+        async function updateItemStatus(id, ns, oid) { await sb.from('orders').update({ status: ns }).eq('id', id); loadOrdersDashboard(); }
+        async function deleteOrderItem(id, oid) { if (confirm("ลบ?")) { await sb.from('orders').delete().eq('id', id); loadOrdersDashboard(); } }
+        function closeDetailModal() { document.getElementById('detail-modal').classList.add('hidden'); }
+        function logout() { if(confirm("ออกจากระบบ?")) location.reload(); }
+        function openAlertModal() { document.getElementById('alert-modal').classList.remove('hidden'); loadAlertOptions(); }
+        async function loadAlertOptions() { const { data } = await sb.from('notification_topics').select('*').order('topic_name'); document.getElementById('topic-options').innerHTML = data.map(t => `<button onclick="submitPickerAlert('${t.topic_name}')" class="bg-gray-100 p-4 rounded-2xl text-lg font-bold text-left active:bg-blue-600 active:text-white">${t.topic_name}</button>`).join(''); }
+        function closeAlertModal() { document.getElementById('alert-modal').classList.add('hidden'); }
+        async function submitPickerAlert(t) { if (!currentUser.currentOrder) return; await sb.from('notifications').insert([{ type: t, order_id: currentUser.currentOrder.order_id, picker_id: currentUser.id, status: 'unread', is_read: false }]); alert("ส่งแล้ว: " + t); closeAlertModal(); }
     </script>
 </body>
 </html>
