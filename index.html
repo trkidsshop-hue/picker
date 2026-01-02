@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WMS Smart System V.4.7</title>
+    <title>WMS Smart System V.4.8</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -377,7 +377,8 @@
                 switchMenu('menu-upload');
                 subscribeRealtime();
                 loadSettings();
-                updateNotifBadge();
+                updateNotifBadge();   // อัปเดตแจ้งเตือนปัญหา
+                updateReviewBadge();  // อัปเดตจำนวนรอตรวจ (สินค้าที่หยิบเสร็จแล้ว)
             } else {
                 document.getElementById('picker-layout').classList.remove('hidden');
                 document.getElementById('p-name').innerText = currentUser.username;
@@ -847,27 +848,38 @@
         async function pickerFinishItem() { if (!currentUser.currentOrder) return; await sb.from('orders').update({ status: 'picked', end_time: new Date().toISOString() }).eq('id', currentUser.currentOrder.id); pickerCurrentIndex = 0; loadPickerTask(); }
         async function submitNoProduct() { if (!currentUser.currentOrder) return; if(confirm("แจ้งสินค้าหมด?")) { await sb.from('orders').update({ status: 'out_of_stock', end_time: new Date().toISOString() }).eq('id', currentUser.currentOrder.id); await sb.from('notifications').insert([{ type: 'สินค้าหมด (X)', order_id: currentUser.currentOrder.order_id, picker_id: currentUser.id, status: 'unread', is_read: false }]); pickerCurrentIndex = 0; loadPickerTask(); } }
 
-        // --- REAL-TIME & SETTINGS ---
+        // --- REAL-TIME & SETTINGS (V.4.8 Integrated) ---
         function subscribeRealtime() {
             sb.channel('global').on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
                 if(currentUser.role === 'admin') { 
                     loadOrdersDashboard(); 
                     loadReviewDropdown(true); 
-                    updateReviewBadge(); // อัปเดตตัวเลขรอตรวจทันทีเมื่อมีการอัปเดตข้อมูลสินค้า
+                    updateReviewBadge(); 
                 } 
-                else { if(currentPickerOrderId) loadPickerTask(); else loadPickerOrderList(); }
+                else { 
+                    if(currentPickerOrderId) loadPickerTask(); else loadPickerOrderList(); 
+                }
             }).on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => { 
                 if(currentUser.role === 'admin') { 
                     updateNotifBadge(); 
-                             updateReviewBadge(); //
                     if(!document.getElementById('menu-notif').classList.contains('hidden')) loadNotifications(); 
                 } 
             }).subscribe();
         }
+
+        // ฟังก์ชันอัปเดตตัวเลขแจ้งเตือน "ปัญหา" (เมนูแจ้งเตือน)
         async function updateNotifBadge() { 
             const { count } = await sb.from('notifications').select('*', { count: 'exact', head: true }).eq('is_read', false); 
             const b = document.getElementById('notif-badge'); 
-            if(count > 0){ b.innerText = count; b.classList.remove('hidden'); } else { b.classList.add('hidden'); } 
+            if(count && count > 0){ b.innerText = count; b.classList.remove('hidden'); } else { b.classList.add('hidden'); } 
+        }
+
+        // ฟังก์ชันอัปเดตตัวเลขแจ้งเตือน "รอตรวจ" (เมนูตรวจสินค้า)
+        async function updateReviewBadge() {
+            const { count } = await sb.from('orders').select('*', { count: 'exact', head: true }).eq('status', 'picked');
+            const b = document.getElementById('review-badge');
+            if (count && count > 0) { b.innerText = count; b.classList.remove('hidden'); } 
+            else { b.classList.add('hidden'); }
         }
 
         // ฟังก์ชันใหม่: นับจำนวนสินค้าที่มีสถานะ 'picked' ทั้งหมดในระบบ
