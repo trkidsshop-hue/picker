@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WMS Smart System V.4.8</title>
+    <title>WMS Smart System V.5.6</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -302,18 +302,27 @@
                 <h2 class="text-xl font-black mb-4">รายการใบงานที่ได้รับ</h2>
                 <div id="p-order-items-container" class="space-y-3 overflow-y-auto pb-4"></div>
             </div>
-            <!-- หน้า Card (Optimized Layout V.4.5) -->
+            <!-- หน้า Card (ปรับปรุงใหม่ V.5.3.1) -->
             <div id="p-job-card" class="bg-white text-slate-900 w-full rounded-[2.5rem] overflow-hidden shadow-2xl flex flex-col hidden" style="height: 72vh;">
-                <div class="relative flex-1 bg-gray-100 overflow-hidden">
-                    <img id="p-img" src="" class="w-full h-full object-contain">
-                    <div class="absolute top-4 left-4 bg-red-600 text-white px-5 py-2 rounded-2xl font-black text-2xl shadow-lg border-2 border-white z-10">
+                <!-- Header: จุดจัดเก็บ และ ปุ่ม List -->
+                <div class="p-4 bg-white flex justify-between items-center border-b">
+                    <div class="bg-red-600 text-white px-5 py-2 rounded-2xl font-black text-2xl shadow-lg">
                         <span id="p-loc">---</span>
                     </div>
+                    <button onclick="openPickerListModal()" class="bg-slate-100 text-slate-600 w-12 h-12 rounded-2xl flex items-center justify-center shadow-inner active:bg-blue-500 active:text-white transition-all">
+                        <i class="fas fa-list-ul text-xl"></i>
+                    </button>
+                </div>
+
+                <!-- รูปภาพ (ไม่โดนบังแล้ว) -->
+                <div class="flex-1 bg-gray-100 overflow-hidden">
+                    <img id="p-img" src="" class="w-full h-full object-contain">
                 </div>
                 
                 <div class="p-4 bg-white">
-                    <div class="min-h-[70px] mb-2 flex items-start">
-                        <h2 class="text-[18px] font-bold leading-[1.3] text-slate-800" id="p-prod" style="display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;">---</h2>
+                    <!-- ชื่อสินค้าเหลือ 1 บรรทัด -->
+                    <div class="mb-3">
+                        <h2 class="text-[18px] font-bold text-slate-800 truncate" id="p-prod">---</h2>
                     </div>
                     
                     <div class="grid grid-cols-2 gap-2 mb-3">
@@ -331,6 +340,19 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Modal แสดงรายการทั้งหมดของ Picker -->
+            <div id="p-list-modal" class="hidden fixed inset-0 z-[110] bg-slate-900/95 flex items-center justify-center p-4">
+                <div class="bg-white w-full max-w-md rounded-[2.5rem] overflow-hidden flex flex-col shadow-2xl h-[80vh]">
+                    <div class="p-6 border-b flex justify-between items-center bg-slate-50">
+                        <h3 class="font-black text-xl text-slate-800">รายการในใบงาน</h3>
+                        <button onclick="closePickerListModal()" class="text-gray-400 hover:text-red-500 text-2xl"><i class="fas fa-times-circle"></i></button>
+                    </div>
+                    <div id="p-list-items-container" class="flex-1 overflow-y-auto p-4 space-y-2">
+                        <!-- รายการจะถูกใส่ที่นี่ด้วย JS -->
+                    </div>
+                </div>
+            </div>
             
             <div id="picker-actions" class="flex gap-2 p-2 hidden">
                 <button onclick="pickerNavigate(-1)" class="w-20 bg-slate-800 text-white py-6 rounded-3xl text-3xl shadow-lg"><i class="fas fa-chevron-left"></i></button>
@@ -341,9 +363,134 @@
         </div>
         <div id="alert-modal" class="hidden fixed inset-0 z-[100] bg-slate-900/95 flex items-center justify-center p-6"><div class="bg-white w-full max-w-sm rounded-[3rem] text-slate-900 shadow-2xl"><div class="p-8 bg-slate-50 border-b flex justify-between items-center"><h3 class="font-black text-2xl">เลือกปัญหา</h3><button onclick="closeAlertModal()" class="text-gray-300 hover:text-red-500 text-3xl"><i class="fas fa-times-circle"></i></button></div><div id="topic-options" class="p-6 grid grid-cols-1 gap-3 overflow-y-auto" style="max-height: 60vh;"></div></div></div>
     </div>
+<script>
+        // --- 1. ฟังก์ชันจัดการรายการ List Item (แสดงครบทุกสถานะ V.5.5 สมบูรณ์) ---
+        function openPickerListModal() {
+            const modal = document.getElementById('p-list-modal');
+            const container = document.getElementById('p-list-items-container');
+            modal.classList.remove('hidden');
 
-    <script>
-        // --- HELPER FUNCTIONS ---
+            if (!currentPickerItems || currentPickerItems.length === 0) {
+                container.innerHTML = '<div class="text-center p-10 text-gray-400 italic">ไม่มีข้อมูลรายการ</div>';
+                return;
+            }
+
+            container.innerHTML = currentPickerItems.map((item, idx) => {
+                let statusIcon = '<div class="w-6 h-6 rounded-full border-2 border-gray-200"></div>'; // รอจัด
+                let bgClass = "bg-white";
+                
+                // แสดงสถานะใน List
+                if (item.status === 'picked' || item.status === 'correct') {
+                    statusIcon = '<i class="fas fa-check-circle text-green-500 text-2xl"></i>';
+                    bgClass = "bg-green-50/50";
+                } else if (item.status === 'out_of_stock') {
+                    statusIcon = '<i class="fas fa-times-circle text-red-500 text-2xl"></i>';
+                    bgClass = "bg-red-50/50";
+                }
+
+                // ไฮไลท์รายการที่เปิดอยู่
+                if (item.id === (currentUser.currentOrder?.id || '')) {
+                    bgClass = "border-blue-500 bg-blue-50 ring-2 ring-blue-100";
+                }
+
+                return `
+                <div onclick="jumpToItem(${idx})" class="flex items-center justify-between p-3 border rounded-2xl transition-all cursor-pointer active:scale-95 ${bgClass}">
+                    <div class="flex items-center gap-3 overflow-hidden">
+                        <span class="font-black ${item.id === currentUser.currentOrder?.id ? 'text-blue-600' : 'text-gray-300'} text-sm w-4">${idx + 1}</span>
+                        <div class="overflow-hidden">
+                            <div class="font-bold text-slate-800 text-sm truncate">${item.product_name}</div>
+                            <div class="text-[10px] font-bold text-gray-400 uppercase">จุดเก็บ: <span class="text-red-500">${item.location}</span> | จำนวน: ${item.qty}</div>
+                        </div>
+                    </div>
+                    <div class="shrink-0 ml-2">
+                        ${statusIcon}
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        function closePickerListModal() {
+            document.getElementById('p-list-modal').classList.add('hidden');
+        }
+
+        function jumpToItem(idx) {
+            pickerCurrentIndex = idx;
+            renderPickerCard();
+            closePickerListModal();
+        }
+
+        // --- 2. ฟังก์ชันโหลดข้อมูลงาน (ดึงข้อมูลทั้งหมดมาแสดงใน List) ---
+        // --- ปรับปรุงฟังก์ชันโหลดงานให้รองรับ Index ต่อเนื่อง ---
+        async function loadPickerTask() {
+            if (!currentPickerOrderId) return;
+
+            const { data } = await sb.from('orders')
+                .select('*')
+                .eq('order_id', currentPickerOrderId)
+                .order('location', { ascending: true });
+            
+            if (!data || data.length === 0) { 
+                if (pickerTimerInterval) clearInterval(pickerTimerInterval);
+                currentPickerOrderId = null; 
+                alert("ไม่พบข้อมูลใบงาน!"); 
+                return loadPickerOrderList(); 
+            }
+            
+            currentPickerItems = data; 
+            
+            // ตรวจสอบว่าถ้า Index เกินจำนวนรายการ (เช่น เพิ่งกดรายการสุดท้าย) ให้กลับไปเริ่มที่ 0
+            if (pickerCurrentIndex >= data.length) {
+                pickerCurrentIndex = 0;
+            }
+            
+            // เช็คว่าใบงานนี้จัดการครบหรือยัง
+            const isAllDone = data.every(i => ['picked', 'correct', 'wrong', 'not_find', 'out_of_stock'].includes(i.status));
+            if (isAllDone) {
+                if (pickerTimerInterval) clearInterval(pickerTimerInterval);
+                alert("ใบงานนี้จัดการครบทุกรายการแล้ว!");
+                return loadPickerOrderList();
+            }
+
+            renderPickerCard();
+        }
+
+        // --- 3. ฟังก์ชันแสดงผล Card รายสินค้า ---
+        function renderPickerCard() {
+            if (pickerTimerInterval) clearInterval(pickerTimerInterval);
+            
+            const cj = currentPickerItems[pickerCurrentIndex]; 
+            currentUser.currentOrder = cj;
+            
+            document.getElementById('p-job-card').classList.remove('hidden'); 
+            document.getElementById('picker-actions').classList.remove('hidden');
+            
+            document.getElementById('p-loc').innerText = cj.location || '-'; 
+            document.getElementById('p-prod').innerText = cj.product_name; 
+            document.getElementById('p-qty').innerText = cj.qty;
+            document.getElementById('p-current-idx').innerText = pickerCurrentIndex + 1; 
+            document.getElementById('p-total-items').innerText = currentPickerItems.length;
+            
+            const img = document.getElementById('p-img'); 
+            img.src = `${PROJECT_A_IMAGE_URL}${cj.product_code}.jpg`; 
+            img.onerror = () => img.src = 'https://placehold.co/500x500?text=NO+IMAGE';
+
+            // จัดการปุ่ม "หยิบเสร็จแล้ว" (เปลี่ยนสีถ้าทำเสร็จแล้ว)
+            const btnNext = document.getElementById('p-btn-next');
+            const finished = ['picked', 'correct', 'out_of_stock'].includes(cj.status);
+            
+            if (finished) {
+                btnNext.innerText = (cj.status === 'out_of_stock') ? "สินค้าหมดแล้ว" : "หยิบเรียบร้อยแล้ว";
+                btnNext.className = "flex-1 bg-slate-500 py-6 rounded-3xl text-2xl font-black shadow-lg opacity-60 cursor-not-allowed";
+                btnNext.onclick = null;
+            } else {
+                btnNext.innerText = "หยิบเสร็จแล้ว";
+                btnNext.className = "flex-1 bg-green-500 py-6 rounded-3xl text-2xl font-black shadow-lg active:scale-95 transition-all";
+                btnNext.onclick = pickerFinishItem;
+            }
+
+            startPickerTimer(cj.created_at);
+        }        
+        // --- ฟังก์ชันพื้นฐานอื่นๆ (ห้ามลบ) ---
         function formatDuration(ms) {
             if (ms < 0 || isNaN(ms)) return "00:00:00";
             let s = Math.floor(ms / 1000);
@@ -487,13 +634,37 @@
 
         async function startInspection() {
             const oid = document.getElementById('reviewOrderSelect').value;
-            if(!oid) return alert("เลือกใบงาน!");
-            const items = allOrdersData.filter(i => i.order_id === oid);
-            if (items.length > 0 && items.some(i => ['pending'].includes(i.status))) return alert("ไม่อนุญาตให้ตรวจเนื่องจากใบงานยังไม่เสร็จสิ้น (IN PROGRESS)");
-            const { data } = await sb.from('orders').select('*').eq('order_id', oid).order('location', {ascending: true});
-            currentInspectItems = data || [];
+            if(!oid) return alert("โปรดเลือกใบงานที่ต้องการตรวจ!");
+
+            // ดึงข้อมูลรายการทั้งหมดของใบงานนี้โดยตรงจาก Database
+            const { data, error } = await sb.from('orders')
+                .select('*')
+                .eq('order_id', oid)
+                .order('location', { ascending: true });
+
+            if (error || !data || data.length === 0) {
+                return alert("ไม่พบข้อมูลรายการในใบงานนี้");
+            }
+
+            // ตรวจสอบสถานะว่ามีรายการไหนที่ "ยังไม่ได้จัด" (pending) หรือไม่
+            // โดยใช้ data ที่ดึงมาสดๆ แทนการใช้ allOrdersData
+            const hasUnfinishedItems = data.some(item => item.status === 'pending');
+            if (hasUnfinishedItems) {
+                return alert("ไม่อนุญาตให้ตรวจเนื่องจากใบงานนี้ยังจัดไม่เสร็จสิ้น (มีรายการค้างจัด)");
+            }
+
+            // ถ้าทุกอย่างถูกต้อง ให้นำข้อมูลมาแสดงผล
+            currentInspectItems = data;
+            
+            // แสดง UI ส่วนการตรวจ
             document.getElementById('inspection-counter').classList.remove('hidden');
             document.getElementById('review-tabs').classList.remove('hidden');
+            
+            // รีเซ็ต Tab การตรวจกลับไปที่ "ทั้งหมด" ทุกครั้งที่เริ่มใหม่
+            currentInspectTab = 'all';
+            document.querySelectorAll('.inspect-tab').forEach(el => el.classList.remove('inspect-tab-active', 'inspect-tab-correct-active'));
+            document.getElementById('itab-all').classList.add('inspect-tab-active');
+            
             renderInspectionList();
         }
 
@@ -797,56 +968,48 @@
             stopAndResetPickerTimer();
             loadPickerOrderList(); 
         }
-
-        async function loadPickerTask() {
-            // หากไม่มี Order ID ที่กำลังทำอยู่ ให้ข้ามไปเลย (ป้องกันกรณี Realtime มาเรียกซ้ำตอนจัดเสร็จแล้ว)
-            if (!currentPickerOrderId) return;
-
-            stopAndResetPickerTimer();
-            
-            const { data } = await sb.from('orders')
-                .select('*')
-                .eq('assigned_to', currentUser.id)
-                .eq('order_id', currentPickerOrderId)
-                .in('status', ['pending', 'wrong', 'not_find'])
-                .order('created_at', { ascending: true });
-            
-            if (!data || data.length === 0) { 
-                // เคลียร์ค่า ID ออกทันที ก่อนจะ Alert เพื่อไม่ให้ฟังก์ชันนี้ทำงานซ้ำ
-                currentPickerOrderId = null; 
-                alert("ใบงานนี้จัดเสร็จสิ้นแล้ว!"); 
-                return loadPickerOrderList(); 
-            }
-            
-            currentPickerItems = data; 
-            if (pickerCurrentIndex >= data.length) pickerCurrentIndex = 0;
-            const cj = currentPickerItems[pickerCurrentIndex]; 
-            currentUser.currentOrder = cj;
-            
-            document.getElementById('p-job-card').classList.remove('hidden'); 
-            document.getElementById('picker-actions').classList.remove('hidden');
-            document.getElementById('p-loc').innerText = cj.location || '-'; 
-            document.getElementById('p-prod').innerText = cj.product_name; 
-            document.getElementById('p-qty').innerText = cj.qty;
-            document.getElementById('p-current-idx').innerText = pickerCurrentIndex + 1; 
-            document.getElementById('p-total-items').innerText = data.length;
-            
-            const img = document.getElementById('p-img'); 
-            img.src = `${PROJECT_A_IMAGE_URL}${cj.product_code}.jpg`; 
-            img.onerror = () => img.src = 'https://placehold.co/500x500?text=NO+IMAGE';
-            
-            startPickerTimer(cj.created_at);
-        }
-
+        
         function startPickerTimer(start) { 
             if (pickerTimerInterval) clearInterval(pickerTimerInterval);
             pickerTimerInterval = setInterval(() => { 
                 document.getElementById('p-timer').innerText = calculateDuration(start, null); 
             }, 1000); 
         }
-        function pickerNavigate(dir) { pickerCurrentIndex += dir; if (pickerCurrentIndex < 0) pickerCurrentIndex = currentPickerItems.length - 1; if (pickerCurrentIndex >= currentPickerItems.length) pickerCurrentIndex = 0; loadPickerTask(); }
-        async function pickerFinishItem() { if (!currentUser.currentOrder) return; await sb.from('orders').update({ status: 'picked', end_time: new Date().toISOString() }).eq('id', currentUser.currentOrder.id); pickerCurrentIndex = 0; loadPickerTask(); }
-        async function submitNoProduct() { if (!currentUser.currentOrder) return; if(confirm("แจ้งสินค้าหมด?")) { await sb.from('orders').update({ status: 'out_of_stock', end_time: new Date().toISOString() }).eq('id', currentUser.currentOrder.id); await sb.from('notifications').insert([{ type: 'สินค้าหมด (X)', order_id: currentUser.currentOrder.order_id, picker_id: currentUser.id, status: 'unread', is_read: false }]); pickerCurrentIndex = 0; loadPickerTask(); } }
+        // --- ปรับปรุงระบบการเปลี่ยนรายการ (V.5.5.1) ---
+        function pickerNavigate(dir) { 
+            pickerCurrentIndex += dir; 
+            // ตรวจสอบขอบเขต index
+            if (pickerCurrentIndex < 0) pickerCurrentIndex = currentPickerItems.length - 1; 
+            if (pickerCurrentIndex >= currentPickerItems.length) pickerCurrentIndex = 0; 
+            loadPickerTask(); 
+        }
+
+        async function pickerFinishItem() { 
+            if (!currentUser.currentOrder) return; 
+            await sb.from('orders').update({ status: 'picked', end_time: new Date().toISOString() }).eq('id', currentUser.currentOrder.id); 
+            
+            // ขยับไปรายการถัดไปทันที (ไม่กลับไป 0)
+            pickerCurrentIndex++; 
+            loadPickerTask(); 
+        }
+
+        async function submitNoProduct() { 
+            if (!currentUser.currentOrder) return; 
+            if(confirm("แจ้งสินค้าหมด?")) { 
+                await sb.from('orders').update({ status: 'out_of_stock', end_time: new Date().toISOString() }).eq('id', currentUser.currentOrder.id); 
+                await sb.from('notifications').insert([{ 
+                    type: 'สินค้าหมด (X)', 
+                    order_id: currentUser.currentOrder.order_id, 
+                    picker_id: currentUser.id, 
+                    status: 'unread', 
+                    is_read: false 
+                }]); 
+                
+                // ขยับไปรายการถัดไปทันที (ไม่กลับไป 0)
+                pickerCurrentIndex++; 
+                loadPickerTask(); 
+            } 
+        }
 
         // --- REAL-TIME & SETTINGS (V.4.8 Integrated) ---
         function subscribeRealtime() {
@@ -953,7 +1116,7 @@
                     const spareSheet = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[1]]);
                     if (spareSheet.length > 0) {
                         for (const oid of foids) {
-                            const partsWorkflow = spareSheet.map(row => ({ order_id: oid, product_code: 'SPARE_PART', product_name: String(row['รายการ']), location: 'อะไหล่', qty: row['จำนวน'], assigned_to: pid }));
+                            const partsWorkflow = spareSheet.map(row => ({ order_id: oid, product_code: 'SPARE_PART', product_name: String(row['รายการอะไหล่']), location: 'อะไหล่', qty: row['จำนวนรวม'], assigned_to: pid }));
                             await sb.from('orders').insert(partsWorkflow);
                         }
                     }
@@ -981,11 +1144,39 @@
             if(m === 'menu-kpi') loadKPI();
             if(m === 'menu-review') loadReviewDropdown();
         }
-        function openDetailModal(orderId) {
-            const items = allOrdersData.filter(d => d.order_id === orderId);
+// ฟังก์ชันสำหรับเรียงลำดับ: เรียงตามจุดเก็บ (ก-ฮ) แต่ถ้าเป็น "อะไหล่" ให้ไปอยู่ล่างสุด
+function sortOrderItems(items) {
+    if (!items) return [];
+    return items.sort((a, b) => {
+        const locA = a.location || "";
+        const locB = b.location || "";
+
+        // ถ้า A เป็นอะไหล่ แต่ B ไม่ใช่ ให้ B ไปอยู่หลัง (Return 1)
+        if (locA === 'อะไหล่' && locB !== 'อะไหล่') return 1;
+        // ถ้า B เป็นอะไหล่ แต่ A ไม่ใช่ ให้ A อยู่หน้า (Return -1)
+        if (locA !== 'อะไหล่' && locB === 'อะไหล่') return -1;
+        
+        // ถ้าไม่เข้าเงื่อนไขอะไหล่ ให้เรียงตามตัวอักษรปกติ (ก-ฮ)
+        return locA.localeCompare(locB, 'th');
+    });
+}
+        async function openDetailModal(orderId) {
             document.getElementById('modal-title').innerText = `ใบงาน: ${orderId}`;
-            renderModalBody(items, orderId);
             document.getElementById('detail-modal').classList.remove('hidden');
+            
+            // ดึงข้อมูลใหม่จากฐานข้อมูลเพื่อให้ได้ค่าล่าสุด
+            const { data, error } = await sb.from('orders')
+                .select('*')
+                .eq('order_id', orderId);
+
+            if (error) {
+                console.error("Error fetching order details:", error);
+                return;
+            }
+
+            // เรียงลำดับข้อมูลก่อนแสดงผล
+            const sortedData = sortOrderItems(data);
+            renderModalBody(sortedData, orderId);
         }
         function renderModalBody(items, orderId) {
             const dropdownStatuses = ['pending', 'picked', 'out_of_stock'];
@@ -1037,8 +1228,54 @@
                 </tr>`;
             }).join('');
         }
-        async function updateItemStatus(id, ns, oid) { await sb.from('orders').update({ status: ns }).eq('id', id); loadOrdersDashboard(); }
-        async function deleteOrderItem(id, oid) { if (confirm("ลบ?")) { await sb.from('orders').delete().eq('id', id); loadOrdersDashboard(); } }
+        async function updateItemStatus(id, ns, oid) {
+            // 1. อัปเดตสถานะใหม่ลงในฐานข้อมูล Supabase
+            const { error } = await sb.from('orders').update({ status: ns }).eq('id', id);
+            
+            if (error) {
+                alert("ไม่สามารถอัปเดตสถานะได้: " + error.message);
+                return;
+            }
+
+            // 2. ดึงข้อมูลล่าสุดของใบงานนี้มาใหม่
+            const { data: updatedItems, error: fetchError } = await sb.from('orders')
+                .select('*')
+                .eq('order_id', oid);
+
+            if (!fetchError) {
+                // 3. เรียงลำดับข้อมูลด้วย Logic เดิม (ทำให้ลำดับไม่ย้ายที่)
+                const sortedData = sortOrderItems(updatedItems);
+                renderModalBody(sortedData, oid);
+            }
+
+            // 4. อัปเดต Dashboard ภาพรวมที่อยู่ด้านหลังด้วย
+            loadOrdersDashboard();
+        }
+        async function deleteOrderItem(id, oid) {
+            if (confirm("ยืนยันการลบรายการนี้หรือไม่?")) {
+                // 1. ลบข้อมูลออกจากฐานข้อมูล
+                const { error } = await sb.from('orders').delete().eq('id', id);
+                
+                if (error) {
+                    alert("ไม่สามารถลบข้อมูลได้: " + error.message);
+                    return;
+                }
+
+                // 2. ดึงข้อมูลใหม่
+                const { data: updatedItems, error: fetchError } = await sb.from('orders')
+                    .select('*')
+                    .eq('order_id', oid);
+
+                if (!fetchError) {
+                    // 3. เรียงลำดับข้อมูล (ก-ฮ และ อะไหล่ไว้ท้ายสุด)
+                    const sortedData = sortOrderItems(updatedItems);
+                    renderModalBody(sortedData, oid);
+                }
+
+                // 4. อัปเดตตาราง Dashboard ด้านหลัง
+                loadOrdersDashboard();
+            }
+        }
         function closeDetailModal() { document.getElementById('detail-modal').classList.add('hidden'); }
         function logout() { if(confirm("ออกจากระบบ?")) location.reload(); }
         function openAlertModal() { document.getElementById('alert-modal').classList.remove('hidden'); loadAlertOptions(); }
