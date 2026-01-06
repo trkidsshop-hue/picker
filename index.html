@@ -66,7 +66,7 @@
     <!-- 2. ADMIN LAYOUT -->
     <div id="admin-layout" class="hidden flex h-screen overflow-hidden">
         <aside class="w-64 bg-slate-800 text-gray-300 flex flex-col shrink-0">
-            <div class="p-6 text-xl font-black text-white border-b border-slate-700 tracking-tighter">WMS SYSTEM</div>
+            <div class="p-6 text-xl font-black text-white border-b border-slate-700 tracking-tighter">WMS SYSTEM [ V.5.7 ]</div>
             <nav class="flex-1 mt-4 text-sm font-medium">
                 <div onclick="switchMenu('menu-upload')" class="menu-link flex items-center p-4" id="link-upload"><i class="fas fa-file-import w-8"></i> <span>จัดสินค้า</span></div>
                 <div onclick="switchMenu('menu-review')" class="menu-link flex items-center p-4 relative" id="link-review">
@@ -471,7 +471,8 @@
             document.getElementById('p-total-items').innerText = currentPickerItems.length;
             
             const img = document.getElementById('p-img'); 
-            img.src = `${PROJECT_A_IMAGE_URL}${cj.product_code}.jpg`; 
+            const imgUrl = cj.product_code === 'SPARE_PART' ? 'https://otswcrrcidtkpjijirax.supabase.co/storage/v1/object/public/Product_Pic/spare_part.jpg' : `${PROJECT_A_IMAGE_URL}${cj.product_code}.jpg`;
+            img.src = imgUrl;
             img.onerror = () => img.src = 'https://placehold.co/500x500?text=NO+IMAGE';
 
             // จัดการปุ่ม "หยิบเสร็จแล้ว" (เปลี่ยนสีถ้าทำเสร็จแล้ว)
@@ -626,7 +627,10 @@
             // เก็บค่าที่เลือกไว้ปัจจุบัน
             const currentSelected = document.getElementById('reviewOrderSelect').value;
             
-            document.getElementById('reviewOrderSelect').innerHTML = completed.length ? '<option value="">-- เลือกใบงานที่จัดเสร็จแล้ว --</option>' + completed.map(o => `<option value="${o.id}">${o.id} (${o.total} รายการ) [ยังไม่ได้ตรวจ ${o.picked} รายการ]</option>`).join('') : '<option value="">ไม่มีใบงานที่พร้อมตรวจ</option>';
+            document.getElementById('reviewOrderSelect').innerHTML = completed.length ? '<option value="">-- เลือกใบงานที่จัดเสร็จแล้ว --</option>' + completed.map(o => {
+                const colorStyle = o.picked > 0 ? 'style="color: red; font-weight: bold;"' : '';
+                return `<option value="${o.id}" ${colorStyle}>${o.id} (${o.total} รายการ) [ยังไม่ได้ตรวจ ${o.picked} รายการ]</option>`;
+            }).join('') : '<option value="">ไม่มีใบงานที่พร้อมตรวจ</option>';
             
             // คืนค่าใบงานที่เลือกอยู่เดิม (เพื่อไม่ให้ Dropdown กระโดด)
             if(currentSelected) document.getElementById('reviewOrderSelect').value = currentSelected;
@@ -1197,7 +1201,7 @@ function sortOrderItems(items) {
                 return `
                 <tr>
                     <td class="p-3">
-                        <img src="${PROJECT_A_IMAGE_URL}${item.product_code}.jpg" class="w-10 h-10 rounded shadow-sm" onerror="this.src='https://placehold.co/100x100?text=NO+IMG';">
+                        <img src="${item.product_code === 'SPARE_PART' ? 'https://otswcrrcidtkpjijirax.supabase.co/storage/v1/object/public/Product_Pic/spare_part.jpg' : PROJECT_A_IMAGE_URL + item.product_code + '.jpg'}" class="w-10 h-10 rounded shadow-sm" onerror="this.src='https://placehold.co/100x100?text=NO+IMG';">
                     </td>
                     <td class="p-3">
                         <div class="font-bold text-slate-700">${item.product_name}</div>
